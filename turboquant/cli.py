@@ -9,6 +9,17 @@ from .turboquant import TurboQuant, TurboQuantConfig
 from .kv_cache import KVCacheCompressor, benchmark_kv_cache
 from .utils import compute_distortion
 from .model_export import load_gguf, load_safetensors
+from .clipboard import copy_error_to_clipboard, reset_terminal_state
+
+
+def handle_error(error: Exception, command: str) -> int:
+    print(f"Error: {error}", file=sys.stderr)
+    import traceback
+
+    traceback.print_exc()
+    reset_terminal_state()
+    copy_error_to_clipboard(error, command)
+    return 1
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -320,11 +331,7 @@ def cmd_compress(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_error(e, "compress")
 
 
 def cmd_decompress(args: argparse.Namespace) -> int:
@@ -372,11 +379,7 @@ def cmd_decompress(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_error(e, "decompress")
 
 
 def cmd_benchmark(args: argparse.Namespace) -> int:
@@ -451,11 +454,7 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_error(e, "benchmark")
 
 
 def cmd_kv_analyze(args: argparse.Namespace) -> int:
@@ -525,11 +524,7 @@ def cmd_kv_analyze(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_error(e, "kv-analyze")
 
 
 def cmd_info(args: argparse.Namespace) -> int:
@@ -557,8 +552,7 @@ def cmd_info(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+        return handle_error(e, "info")
 
 
 def cmd_quick(args: argparse.Namespace) -> int:
@@ -612,11 +606,7 @@ def cmd_quick(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_error(e, "quick")
 
 
 def cmd_load(args: argparse.Namespace) -> int:
@@ -785,11 +775,7 @@ def cmd_load(args: argparse.Namespace) -> int:
         return 0
 
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_error(e, "load")
 
 
 def cmd_chat(args: argparse.Namespace) -> int:
@@ -809,17 +795,14 @@ def cmd_chat(args: argparse.Namespace) -> int:
         print("Install with: pip install llama-cpp-python", file=sys.stderr)
         return 1
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
+        return handle_error(e, "chat")
 
 
 def _validate_hf_model(model_id: str, token: str | None = None) -> tuple[bool, str]:
     """Quick validation if a HuggingFace model exists without downloading."""
     try:
         from huggingface_hub import HfApi
+
         api = HfApi(token=token)
         api.model_info(model_id)
         return True, ""
@@ -836,21 +819,29 @@ def _validate_hf_model(model_id: str, token: str | None = None) -> tuple[bool, s
 def _format_suggestions(user_input: str) -> str:
     """Provide helpful suggestions based on the user's input."""
     suggestions = []
-    
+
     # Check for common patterns in invalid model names
-    if "claude" in user_input.lower() or "opus" in user_input.lower() or "reasoning" in user_input.lower():
+    if (
+        "claude" in user_input.lower()
+        or "opus" in user_input.lower()
+        or "reasoning" in user_input.lower()
+    ):
         suggestions.append("It looks like you may have copied a description, not a model name")
-    
+
     if "gguf" in user_input.lower():
-        suggestions.append("For GGUF models, try the 'owner/model-GGUF' format (e.g., 'bartowski/llama-3-8b-GGUF')")
-    
+        suggestions.append(
+            "For GGUF models, try the 'owner/model-GGUF' format (e.g., 'bartowski/llama-3-8b-GGUF')"
+        )
+
     if "/" not in user_input:
         suggestions.append("Most HuggingFace models use 'owner/model-name' format")
-        suggestions.append("Examples: 'Qwen/Qwen3.5-2B', 'meta-llama/Llama-3-8B', 'microsoft/Phi-4'")
-    
+        suggestions.append(
+            "Examples: 'Qwen/Qwen3.5-2B', 'meta-llama/Llama-3-8B', 'microsoft/Phi-4'"
+        )
+
     if not suggestions:
         suggestions.append("Check the model name at https://huggingface.co/models")
-    
+
     return "\n".join([f"  • {s}" for s in suggestions])
 
 
@@ -887,9 +878,15 @@ def cmd_download(args: argparse.Namespace) -> int:
 
         # Download tokenizer
         print("Downloading tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained(
-            args.model, token=args.hf_token, cache_dir=args.cache_dir
-        )
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.model, token=args.hf_token, cache_dir=args.cache_dir
+            )
+        except ValueError:
+            # Fall back to slow tokenizer if fast tokenizer dependencies are missing
+            tokenizer = AutoTokenizer.from_pretrained(
+                args.model, token=args.hf_token, cache_dir=args.cache_dir, use_fast=False
+            )
         tokenizer.save_pretrained(output_dir)
         print("✓ Tokenizer saved\n")
 
@@ -1019,6 +1016,7 @@ def cmd_download(args: argparse.Namespace) -> int:
             return 1
 
     except Exception as e:
+        return handle_error(e, "download")
         print(f"Error: {e}", file=sys.stderr)
         import traceback
 
@@ -1033,7 +1031,12 @@ def cmd_list_models(args: argparse.Namespace) -> int:
     # Default model: Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF
     models = {
         "7b": [
-            {"id": "Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF", "desc": "Qwen3.5 9B Gemini 3.1 Pro Reasoning Distill (DEFAULT)", "size": "5.5 GB", "default": True},
+            {
+                "id": "Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF",
+                "desc": "Qwen3.5 9B Gemini 3.1 Pro Reasoning Distill (DEFAULT)",
+                "size": "5.5 GB",
+                "default": True,
+            },
             {"id": "TheBloke/Llama-2-7B-GPTQ", "desc": "Llama 2 7B GPTQ 4-bit", "size": "4.1 GB"},
             {"id": "TheBloke/Llama-2-7B-AWQ", "desc": "Llama 2 7B AWQ 4-bit", "size": "4.1 GB"},
             {"id": "TheBloke/Mistral-7B-v0.1-GPTQ", "desc": "Mistral 7B GPTQ", "size": "4.1 GB"},
@@ -1077,7 +1080,9 @@ def cmd_list_models(args: argparse.Namespace) -> int:
     print("Available Pre-Quantized Models")
     print("=" * 80)
     print("\nInstall with: turboquant download <model_id> --bits 3|4")
-    print("\n👑 DEFAULT: turboquant download Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF\n")
+    print(
+        "\n👑 DEFAULT: turboquant download Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF\n"
+    )
 
     categories = [args.category] if args.category != "all" else ["7b", "13b", "70b", "chat", "code"]
 
@@ -1095,7 +1100,9 @@ def cmd_list_models(args: argparse.Namespace) -> int:
 
     print("\n" + "=" * 80)
     print("💡 Tip: Use --bits 3 for maximum compression or --bits 4 for better quality")
-    print("👑 Recommended: turboquant download Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF")
+    print(
+        "👑 Recommended: turboquant download Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF"
+    )
     print("=" * 80)
 
     return 0

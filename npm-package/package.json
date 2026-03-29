@@ -1,16 +1,27 @@
 {
   "name": "turboquant",
-  "version": "0.2.2",
+  "version": "0.2.5",
   "description": "TurboQuant: Extreme compression for AI models with GGUF and SafeTensors export",
   "main": "index.js",
   "bin": {
     "turboquant": "bin/turboquant",
     "tq": "bin/tq"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "dist/",
+    "index.js",
+    "install.js",
+    "README.md"
+  ],
   "scripts": {
     "install": "node install.js",
     "test": "node test.js",
-    "postinstall": "echo 'TurboQuant installed. Run: turboquant --help'"
+    "tui": "bun src/tui.tsx",
+    "build": "tsc",
+    "prepublishOnly": "npm run build",
+    "postinstall": "echo 'TurboQuant installed. Run: tq (interactive TUI) or turboquant --help'"
   },
   "keywords": [
     "quantization",
@@ -37,6 +48,11 @@
     "node": ">=14.0.0"
   },
   "dependencies": {
-    "child_process": "^1.0.2"
+    "@opentui/core": "^0.1.92",
+    "@opentui/react": "^0.1.92",
+    "react": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0"
   }
 }

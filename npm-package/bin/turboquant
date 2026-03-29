@@ -1,29 +1,180 @@
 #!/usr/bin/env node
 
-const { spawn } = require('child_process');
 const path = require('path');
+const { spawn, spawnSync } = require('child_process');
+const os = require('os');
+
+// Color codes for terminal output
+const RESET = '\x1b[0m';
+const BOLD = '\x1b[1m';
+const DIM = '\x1b[2m';
+const PURPLE = '\x1b[38;5;141m';
+const VIOLET = '\x1b[38;5;93m';
+const GREEN = '\x1b[32m';
+const YELLOW = '\x1b[33m';
+const RED = '\x1b[31m';
+const CYAN = '\x1b[36m';
+
+// Print the TurboQuant logo
+function printLogo() {
+  console.log('');
+  console.log(`${VIOLET}  ████████╗██╗   ██╗██████╗ ██████╗  ██████╗ ${RESET}`);
+  console.log(`${VIOLET}  ╚══██╔══╝██║   ██║██╔══██╗██╔══██╗██╔═══██╗${RESET}`);
+  console.log(`${PURPLE}     ██║   ██║   ██║██████╔╝██████╔╝██║   ██║${RESET}`);
+  console.log(`${PURPLE}     ██║   ██║   ██║██╔══██╗██╔══██╗██║▄▄ ██║${RESET}`);
+  console.log(`     ██║   ╚██████╔╝██║  ██║██████╔╝╚██████╔╝`);
+  console.log(`     ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═════╝  ╚══▀▀═╝ `);
+  console.log(`${DIM}  ─────────── Extreme AI Model Compression ───────────${RESET}`);
+  console.log('');
+}
+
+// Find Bun executable
+function findBun() {
+  const candidates = [
+    'bun',
+    path.join(os.homedir(), '.bun', 'bin', 'bun'),
+    '/usr/local/bin/bun',
+    '/opt/homebrew/bin/bun',
+    '/home/linuxbrew/.linuxbrew/bin/bun',
+    '/usr/bin/bun',
+    '/bin/bun',
+  ];
+
+  for (const cmd of candidates) {
+    const result = spawnSync(cmd, ['--version'], { stdio: 'ignore', shell: false });
+    if (result.status === 0) return cmd;
+  }
+
+  // Last resort: try via shell
+  const result = spawnSync('bun', ['--version'], { stdio: 'ignore', shell: true });
+  if (result.status === 0) return 'bun';
+
+  return null;
+}
+
+// Resolve TUI path - handles various installation layouts (npm, bun, symlinks)
+function resolveTuiPath() {
+  const fs = require('fs');
+  
+  // Resolve the actual directory (in case of symlinks)
+  let binDir;
+  try {
+    binDir = fs.realpathSync(__dirname);
+  } catch {
+    binDir = __dirname;
+  }
+  
+  const packageDir = path.join(binDir, '..');
+  
+  // Try multiple possible locations
+  const candidates = [
+    // Compiled JS version (preferred - works with any runtime)
+    path.join(packageDir, 'dist', 'tui.js'),
+    // Source TypeScript version (requires Bun)
+    path.join(packageDir, 'src', 'tui.tsx'),
+    // Alternative: current working directory relative (for development)
+    path.join(process.cwd(), 'src', 'tui.tsx'),
+    // Global bun install location patterns
+    path.join(binDir, '..', '..', 'src', 'tui.tsx'),
+    path.join(binDir, '..', '..', 'dist', 'tui.js'),
+  ];
+  
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {}
+  }
+  
+  return null;
+}
 
 // Find Python executable
 function findPython() {
-  const pythonCommands = ['python3', 'python', 'py'];
-  
-  for (const cmd of pythonCommands) {
+  for (const cmd of ['python3', 'python', 'py']) {
     try {
-      require('child_process').execSync(`${cmd} --version`, { stdio: 'ignore' });
+      spawnSync(cmd, ['--version'], { stdio: 'ignore' });
       return cmd;
-    } catch (e) {
-      continue;
+    } catch {}
+  }
+  return null;
+}
+
+// Check if we should launch TUI
+const shouldLaunchTUI = process.argv.length <= 2;
+
+// Launch TUI if no arguments provided
+if (shouldLaunchTUI) {
+  const bunPath = findBun();
+  
+  if (bunPath) {
+    const tuiPath = resolveTuiPath();
+    
+    if (!tuiPath) {
+      printLogo();
+      console.error(`${RED}Error: Could not find TUI files${RESET}`);
+      console.error('');
+      console.error('The following paths were checked:');
+      const fs = require('fs');
+      let binDir;
+      try { binDir = fs.realpathSync(__dirname); } catch { binDir = __dirname; }
+      console.error(`  - ${path.join(binDir, '..', 'dist', 'tui.js')}`);
+      console.error(`  - ${path.join(binDir, '..', 'src', 'tui.tsx')}`);
+      console.error('');
+      console.error('This may happen if:');
+      console.error('  - The package was installed without including source files');
+      console.error('  - There is a symlink resolution issue');
+      console.error('');
+      console.log(`${DIM}Falling back to CLI mode...${RESET}\n`);
+    } else {
+      const isCompiled = tuiPath.endsWith('.js');
+      const args = isCompiled ? [tuiPath] : [tuiPath];
+      
+      // Prefer Bun for TUI since @opentui library works best with Bun
+      // Bun can run both .js and .tsx files directly
+      const runtime = bunPath;
+      
+      const child = spawn(runtime, args, { 
+        stdio: 'inherit', 
+        env: process.env,
+        shell: false
+      });
+      
+      child.on('exit', (code) => {
+        process.exit(code || 0);
+      });
+      
+      return; // Exit early, child process handles the rest
     }
   }
   
-  console.error('Error: Python not found. Please install Python 3.8+');
+  // Bun not available - show helpful message
+  printLogo();
+  console.log(`${YELLOW}⚠️  Interactive TUI requires Bun runtime${RESET}\n`);
+  console.log('Install Bun for the best experience:');
+  console.log(`  ${CYAN}curl -fsSL https://bun.sh/install | bash${RESET}\n`);
+  console.log(`${DIM}Falling back to CLI mode...${RESET}\n`);
+}
+
+// CLI Mode - Find Python and delegate
+const python = findPython();
+
+if (!python) {
+  console.error(`${RED}Error: Python not found. Please install Python 3.8+${RESET}`);
+  console.error('');
+  console.error('Install Python:');
+  console.error(`  macOS:    ${CYAN}brew install python${RESET}`);
+  console.error(`  Ubuntu:   ${CYAN}sudo apt install python3 python3-pip${RESET}`);
+  console.error(`  Windows:  ${CYAN}https://python.org/downloads${RESET}`);
+  console.error('');
+  console.error('Then install TurboQuant:');
+  console.error(`  ${CYAN}pip install turboquant${RESET}`);
   process.exit(1);
 }
 
-// Run the Python CLI
-const python = findPython();
+// Run Python CLI
 const args = ['-m', 'turboquant.cli', ...process.argv.slice(2)];
-
 const child = spawn(python, args, {
   stdio: 'inherit',
   shell: false
