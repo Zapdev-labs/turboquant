@@ -1,6 +1,6 @@
 {
   "name": "turboquant",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "TurboQuant: Extreme compression for AI models with GGUF and SafeTensors export",
   "main": "index.js",
   "bin": {
