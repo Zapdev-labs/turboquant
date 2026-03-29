@@ -545,6 +545,8 @@ def main():
         "kv-analyze": cmd_kv_analyze,
         "info": cmd_info,
         "quick": cmd_quick,
+        "download": cmd_download,
+        "list-models": cmd_list_models,
     }
 
     handler = commands.get(args.command)
@@ -564,7 +566,7 @@ def cmd_download(args: argparse.Namespace) -> int:
     try:
         print(f"📥 Downloading model: {args.model}")
         print(f"   Quantization: {args.bits}-bit TurboQuant\n")
-        
+
         # Check if transformers is available
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
@@ -572,25 +574,23 @@ def cmd_download(args: argparse.Namespace) -> int:
             print("Error: transformers library not found")
             print("Install with: pip install transformers torch")
             return 1
-        
-        output_dir = Path(args.output or './models') / args.model.replace('/', '--')
+
+        output_dir = Path(args.output or "./models") / args.model.replace("/", "--")
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         print(f"Output directory: {output_dir}\n")
-        
+
         # Download tokenizer
         print("Downloading tokenizer...")
         tokenizer = AutoTokenizer.from_pretrained(
-            args.model,
-            token=args.hf_token,
-            cache_dir=args.cache_dir
+            args.model, token=args.hf_token, cache_dir=args.cache_dir
         )
         tokenizer.save_pretrained(output_dir)
         print("✓ Tokenizer saved\n")
-        
+
         # Download and quantize model
         print("Loading model (this may take a while)...")
-        
+
         try:
             # Try to load with AutoGPTQ or similar if available
             model = AutoModelForCausalLM.from_pretrained(
@@ -598,48 +598,48 @@ def cmd_download(args: argparse.Namespace) -> int:
                 token=args.hf_token,
                 cache_dir=args.cache_dir,
                 device_map=args.device,
-                torch_dtype='auto',
+                torch_dtype="auto",
             )
             print("✓ Model loaded\n")
-            
+
             # Quantize KV cache
             print("Setting up TurboQuant compression...")
             compressor = KVCacheCompressor(bit_width=args.bits, block_size=128)
             print(f"✓ TurboQuant {args.bits}-bit ready\n")
-            
+
             # Save model with compression metadata
             config = AutoConfig.from_pretrained(args.model)
-            
+
             # Add TurboQuant metadata to config
-            if not hasattr(config, 'quantization_config'):
+            if not hasattr(config, "quantization_config"):
                 config.quantization_config = {}
-            
-            config.quantization_config['turboquant'] = {
-                'bit_width': args.bits,
-                'block_size': 128,
-                'use_qjl': True,
-                'compression_ratio': 4.9 if args.bits == 3 else 3.8,
+
+            config.quantization_config["turboquant"] = {
+                "bit_width": args.bits,
+                "block_size": 128,
+                "use_qjl": True,
+                "compression_ratio": 4.9 if args.bits == 3 else 3.8,
             }
-            
+
             config.save_pretrained(output_dir)
             print(f"✓ Model configuration saved with TurboQuant metadata\n")
-            
+
             # Save quantization info
             info = {
-                'model_id': args.model,
-                'quantization': {
-                    'method': 'turboquant',
-                    'bit_width': args.bits,
-                    'block_size': 128,
-                    'compression_ratio': 4.9 if args.bits == 3 else 3.8,
+                "model_id": args.model,
+                "quantization": {
+                    "method": "turboquant",
+                    "bit_width": args.bits,
+                    "block_size": 128,
+                    "compression_ratio": 4.9 if args.bits == 3 else 3.8,
                 },
-                'output_directory': str(output_dir),
-                'files': list(output_dir.glob('*')),
+                "output_directory": str(output_dir),
+                "files": list(output_dir.glob("*")),
             }
-            
-            with open(output_dir / 'quantization_info.json', 'w') as f:
+
+            with open(output_dir / "quantization_info.json", "w") as f:
                 json.dump(info, f, indent=2, default=str)
-            
+
             print("=" * 60)
             print("✅ Model download and setup complete!")
             print("=" * 60)
@@ -650,9 +650,9 @@ def cmd_download(args: argparse.Namespace) -> int:
             print(f"  model = AutoModelForCausalLM.from_pretrained('{output_dir}')")
             print(f"\nKV cache will be automatically compressed with TurboQuant {args.bits}-bit")
             print(f"Expected memory savings: {info['quantization']['compression_ratio']:.1f}x")
-            
+
             return 0
-            
+
         except Exception as e:
             print(f"\n✗ Error loading model: {e}")
             print("\nTroubleshooting:")
@@ -660,65 +660,80 @@ def cmd_download(args: argparse.Namespace) -> int:
             print("  - For gated models, provide --hf-token")
             print("  - Check if model ID is correct")
             return 1
-            
+
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         import traceback
+
         traceback.print_exc()
         return 1
 
 
 def cmd_list_models(args: argparse.Namespace) -> int:
     """Handle the list-models command."""
-    
+
     # Popular pre-quantized models organized by category
     models = {
-        '7b': [
-            {'id': 'TheBloke/Llama-2-7B-GPTQ', 'desc': 'Llama 2 7B GPTQ 4-bit', 'size': '4.1 GB'},
-            {'id': 'TheBloke/Llama-2-7B-AWQ', 'desc': 'Llama 2 7B AWQ 4-bit', 'size': '4.1 GB'},
-            {'id': 'TheBloke/Mistral-7B-v0.1-GPTQ', 'desc': 'Mistral 7B GPTQ', 'size': '4.1 GB'},
+        "7b": [
+            {"id": "TheBloke/Llama-2-7B-GPTQ", "desc": "Llama 2 7B GPTQ 4-bit", "size": "4.1 GB"},
+            {"id": "TheBloke/Llama-2-7B-AWQ", "desc": "Llama 2 7B AWQ 4-bit", "size": "4.1 GB"},
+            {"id": "TheBloke/Mistral-7B-v0.1-GPTQ", "desc": "Mistral 7B GPTQ", "size": "4.1 GB"},
         ],
-        '13b': [
-            {'id': 'TheBloke/Llama-2-13B-GPTQ', 'desc': 'Llama 2 13B GPTQ 4-bit', 'size': '7.9 GB'},
-            {'id': 'TheBloke/Mistral-7B-Instruct-v0.2-GPTQ', 'desc': 'Mistral 7B Instruct', 'size': '4.1 GB'},
+        "13b": [
+            {"id": "TheBloke/Llama-2-13B-GPTQ", "desc": "Llama 2 13B GPTQ 4-bit", "size": "7.9 GB"},
+            {
+                "id": "TheBloke/Mistral-7B-Instruct-v0.2-GPTQ",
+                "desc": "Mistral 7B Instruct",
+                "size": "4.1 GB",
+            },
         ],
-        '70b': [
-            {'id': 'TheBloke/Llama-2-70B-GPTQ', 'desc': 'Llama 2 70B GPTQ 4-bit', 'size': '39 GB'},
-            {'id': 'TheBloke/Mixtral-8x7B-v0.1-GPTQ', 'desc': 'Mixtral 8x7B MoE GPTQ', 'size': '25 GB'},
+        "70b": [
+            {"id": "TheBloke/Llama-2-70B-GPTQ", "desc": "Llama 2 70B GPTQ 4-bit", "size": "39 GB"},
+            {
+                "id": "TheBloke/Mixtral-8x7B-v0.1-GPTQ",
+                "desc": "Mixtral 8x7B MoE GPTQ",
+                "size": "25 GB",
+            },
         ],
-        'chat': [
-            {'id': 'TheBloke/Llama-2-7B-Chat-GPTQ', 'desc': 'Llama 2 7B Chat', 'size': '4.1 GB'},
-            {'id': 'TheBloke/CodeLlama-7B-Instruct-GPTQ', 'desc': 'CodeLlama 7B Instruct', 'size': '4.1 GB'},
+        "chat": [
+            {"id": "TheBloke/Llama-2-7B-Chat-GPTQ", "desc": "Llama 2 7B Chat", "size": "4.1 GB"},
+            {
+                "id": "TheBloke/CodeLlama-7B-Instruct-GPTQ",
+                "desc": "CodeLlama 7B Instruct",
+                "size": "4.1 GB",
+            },
         ],
-        'code': [
-            {'id': 'TheBloke/CodeLlama-7B-GPTQ', 'desc': 'CodeLlama 7B', 'size': '4.1 GB'},
-            {'id': 'TheBloke/CodeLlama-13B-GPTQ', 'desc': 'CodeLlama 13B', 'size': '7.9 GB'},
-            {'id': 'TheBloke/deepseek-coder-6.7b-instruct-GPTQ', 'desc': 'DeepSeek Coder 6.7B', 'size': '4.0 GB'},
+        "code": [
+            {"id": "TheBloke/CodeLlama-7B-GPTQ", "desc": "CodeLlama 7B", "size": "4.1 GB"},
+            {"id": "TheBloke/CodeLlama-13B-GPTQ", "desc": "CodeLlama 13B", "size": "7.9 GB"},
+            {
+                "id": "TheBloke/deepseek-coder-6.7b-instruct-GPTQ",
+                "desc": "DeepSeek Coder 6.7B",
+                "size": "4.0 GB",
+            },
         ],
     }
-    
+
     print("=" * 80)
     print("Available Pre-Quantized Models")
     print("=" * 80)
     print("\nInstall with: turboquant download <model_id> --bits 3|4\n")
-    
-    categories = [args.category] if args.category != 'all' else ['7b', '13b', '70b', 'chat', 'code']
-    
+
+    categories = [args.category] if args.category != "all" else ["7b", "13b", "70b", "chat", "code"]
+
     for cat in categories:
         if cat in models:
-            print(f"\n{'='*40}")
+            print(f"\n{'=' * 40}")
             print(f"📦 {cat.upper()} Models")
-            print(f"{'='*40}\n")
-            
+            print(f"{'=' * 40}\n")
+
             for model in models[cat]:
                 print(f"  {model['id']}")
                 print(f"    {model['desc']}")
                 print(f"    Size: ~{model['size']}\n")
-    
+
     print("\n" + "=" * 80)
     print("💡 Tip: Use --bits 3 for maximum compression or --bits 4 for better quality")
     print("=" * 80)
-    
+
     return 0
-
-
