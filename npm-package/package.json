@@ -1,6 +1,6 @@
 {
   "name": "turboquant",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TurboQuant: Extreme compression for AI models via Python bindings",
   "main": "index.js",
   "bin": {
@@ -24,12 +24,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/turboquant/turboquant"
+    "url": "https://github.com/zapdev-labs/turboquant"
   },
   "bugs": {
-    "url": "https://github.com/turboquant/turboquant/issues"
+    "url": "https://github.com/zapdev-labs/turboquant/issues"
   },
-  "homepage": "https://github.com/turboquant/turboquant",
+  "homepage": "https://github.com/zapdev-labs/turboquant",
   "engines": {
     "node": ">=14.0.0"
   },
