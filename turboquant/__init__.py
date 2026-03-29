@@ -27,6 +27,18 @@ from .polarquant import PolarQuant
 from .qjl import QJL
 from .codebooks import get_lloyd_max_codebook, generate_codebook
 from .utils import quantize_decompress_benchmark, compute_mse, compute_distortion
+from .model_export import (
+    export_to_gguf,
+    export_to_safetensors,
+    load_gguf,
+    load_safetensors,
+    load_gguf_model,
+    load_safetensors_model,
+    load_model,
+    quantize_model_weights,
+    TurboQuantGGUFLoader,
+    TurboQuantSafeTensorsLoader,
+)
 
 __all__ = [
     "TurboQuant",
@@ -38,4 +50,14 @@ __all__ = [
     "quantize_decompress_benchmark",
     "compute_mse",
     "compute_distortion",
+    "export_to_gguf",
+    "export_to_safetensors",
+    "load_gguf",
+    "load_safetensors",
+    "load_gguf_model",
+    "load_safetensors_model",
+    "load_model",
+    "quantize_model_weights",
+    "TurboQuantGGUFLoader",
+    "TurboQuantSafeTensorsLoader",
 ]

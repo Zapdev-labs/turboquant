@@ -1,7 +1,7 @@
 {
   "name": "turboquant",
-  "version": "0.1.1",
-  "description": "TurboQuant: Extreme compression for AI models via Python bindings",
+  "version": "0.2.0",
+  "description": "TurboQuant: Extreme compression for AI models with GGUF and SafeTensors export",
   "main": "index.js",
   "bin": {
     "turboquant": "./bin/turboquant",
@@ -18,7 +18,10 @@
     "llm",
     "ai",
     "machine-learning",
-    "kv-cache"
+    "kv-cache",
+    "gguf",
+    "safetensors",
+    "turboquant"
   ],
   "author": "TurboQuant Contributors",
   "license": "MIT",

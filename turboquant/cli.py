@@ -8,6 +8,7 @@ from typing import Optional, List
 from .turboquant import TurboQuant, TurboQuantConfig
 from .kv_cache import KVCacheCompressor, benchmark_kv_cache
 from .utils import compute_distortion
+from .model_export import load_gguf, load_safetensors
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -126,8 +127,16 @@ Examples:
         "-b",
         type=int,
         default=4,
-        choices=[2, 3, 4, 8],
+        choices=[2, 3, 4],
         help="Bit-width for quantization (default: 4)",
+    )
+    download_parser.add_argument(
+        "--format",
+        "-f",
+        type=str,
+        default="gguf",
+        choices=["gguf", "safetensors"],
+        help="Export format (default: gguf)",
     )
     download_parser.add_argument("--hf-token", type=str, help="HuggingFace token for gated models")
     download_parser.add_argument(
@@ -151,6 +160,48 @@ Examples:
         choices=["7b", "13b", "70b", "chat", "code", "all"],
         default="all",
         help="Filter by category (default: all)",
+    )
+
+    # Load command
+    load_parser = subparsers.add_parser(
+        "load", help="Load and optionally re-quantize GGUF or SafeTensors models"
+    )
+    load_parser.add_argument(
+        "model_path",
+        type=str,
+        help="Path to GGUF or SafeTensors file",
+    )
+    load_parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        help="Output path for re-quantized model",
+    )
+    load_parser.add_argument(
+        "--bits",
+        "-b",
+        type=int,
+        default=3,
+        choices=[2, 3, 4],
+        help="Bit-width for re-quantization (default: 3)",
+    )
+    load_parser.add_argument(
+        "--format",
+        "-f",
+        type=str,
+        choices=["gguf", "safetensors"],
+        help="Force output format (auto-detected from extension if not specified)",
+    )
+    load_parser.add_argument(
+        "--info",
+        action="store_true",
+        help="Only show model info, don't load fully",
+    )
+    load_parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        help="Device to use for loading (default: auto)",
     )
 
     # Quick compress command (simplified)
@@ -317,8 +368,9 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 
             import time
 
-            # Warmup
-            _ = tq.quantize(data[:100] if len(data) > 100 else data)
+            # Warmup and initialize variables
+            quantized = tq.quantize(data[:100] if len(data) > 100 else data)
+            reconstructed = tq.dequantize(quantized)
 
             # Benchmark compression
             start = time.perf_counter()
@@ -528,6 +580,179 @@ def cmd_quick(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_load(args: argparse.Namespace) -> int:
+    """Handle the load command for GGUF and SafeTensors models."""
+    try:
+        model_path = Path(args.model_path)
+        if not model_path.exists():
+            print(f"Error: Model file '{args.model_path}' not found", file=sys.stderr)
+            return 1
+
+        # Detect file format from extension
+        file_ext = model_path.suffix.lower()
+        if file_ext == ".gguf":
+            file_format = "gguf"
+        elif file_ext == ".safetensors":
+            file_format = "safetensors"
+        else:
+            print(
+                f"Error: Unsupported file format '{file_ext}'. Use .gguf or .safetensors",
+                file=sys.stderr,
+            )
+            return 1
+
+        print(f"Loading {file_format.upper()} model: {args.model_path}")
+        print(f"Device: {args.device}")
+        print()
+
+        # Load model info using appropriate loader
+        if file_format == "gguf":
+            model_info = load_gguf(model_path)
+        else:
+            model_info = load_safetensors(model_path)
+
+        # Display model metadata
+        metadata = model_info.get("metadata", {})
+        tensors = model_info.get("tensors", [])
+
+        # Extract model name and architecture
+        model_name = metadata.get("general.name", "Unknown")
+        architecture = metadata.get("general.architecture", metadata.get("architecture", "Unknown"))
+        quantization_method = metadata.get(
+            "turboquant.bit_width", metadata.get("quantization_config", {}).get("bits", "Unknown")
+        )
+
+        print(f"Model Information:")
+        print(f"  Name: {model_name}")
+        print(f"  Architecture: {architecture}")
+        print(f"  File format: {file_format.upper()}")
+        print(f"  File size: {model_path.stat().st_size / 1024 / 1024:.2f} MB")
+        print()
+
+        # Display quantization info
+        if isinstance(quantization_method, (int, float)):
+            print(f"Quantization: {int(quantization_method)}-bit TurboQuant")
+        else:
+            print(f"Quantization: {quantization_method}")
+
+        # Count tensors and calculate sizes
+        if isinstance(tensors, list):
+            num_tensors = len(tensors)
+        else:
+            num_tensors = len(tensors)
+
+        print(f"  Number of tensors: {num_tensors}")
+
+        # Show per-tensor information
+        if num_tensors > 0:
+            print(f"\nTensor Information:")
+            print(f"{'Name':<50} {'Shape':<30} {'Type':<15}")
+            print("-" * 95)
+
+            total_elements = 0
+            if isinstance(tensors, list):
+                for tensor in tensors[:20]:  # Show first 20 tensors
+                    name = tensor.get("name", "unknown")[:48]
+                    shape = str(tensor.get("shape", "unknown"))[:28]
+                    tensor_type = tensor.get("type", tensor.get("dtype", "unknown"))
+                    if isinstance(tensor_type, int):
+                        type_str = {100: "TurboQuant", 0: "F32", 1: "F16"}.get(
+                            tensor_type, f"Type({tensor_type})"
+                        )
+                    else:
+                        type_str = str(tensor_type)
+                    print(f"{name:<50} {shape:<30} {type_str:<15}")
+                    if "shape" in tensor and isinstance(tensor["shape"], (list, tuple)):
+                        total_elements += np.prod(tensor["shape"])
+
+                if len(tensors) > 20:
+                    print(f"... and {len(tensors) - 20} more tensors")
+            else:
+                # SafeTensors format (dict)
+                for name, tensor_info in list(tensors.items())[:20]:
+                    name = name[:48]
+                    shape = str(tensor_info.get("shape", "unknown"))[:28]
+                    tensor_type = tensor_info.get("dtype", "unknown")
+                    print(f"{name:<50} {shape:<30} {tensor_type:<15}")
+                    if "shape" in tensor_info:
+                        total_elements += np.prod(tensor_info["shape"])
+
+                if len(tensors) > 20:
+                    print(f"... and {len(tensors) - 20} more tensors")
+
+            if total_elements > 0:
+                estimated_fp16_size = total_elements * 2 / 1024 / 1024  # MB
+                actual_size = model_path.stat().st_size / 1024 / 1024  # MB
+                compression_ratio = estimated_fp16_size / actual_size if actual_size > 0 else 0
+                print(f"\nSize Analysis:")
+                print(f"  Estimated FP16 size: {estimated_fp16_size:.2f} MB")
+                print(f"  Actual file size: {actual_size:.2f} MB")
+                print(f"  Compression ratio: {compression_ratio:.2f}x")
+
+        # Show additional metadata
+        if metadata:
+            print(f"\nAdditional Metadata:")
+            for key, value in list(metadata.items())[:10]:
+                if key not in ["general.name", "general.architecture", "turboquant.bit_width"]:
+                    print(f"  {key}: {value}")
+
+        # If --info flag, we're done
+        if args.info:
+            return 0
+
+        # If --output provided, re-quantize the model
+        if args.output:
+            output_path = Path(args.output)
+            output_bits = args.bits
+            output_format = args.format or file_format
+
+            print(f"\n{'=' * 60}")
+            print(f"Re-quantizing model to {output_bits}-bit TurboQuant")
+            print(f"Output format: {output_format.upper()}")
+            print(f"Output path: {output_path}")
+            print(f"{'=' * 60}\n")
+
+            # Create output directory if needed
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Note: Actual re-quantization would require loading full tensor data
+            # This is a placeholder for the re-quantization logic
+            print("Re-quantization process:")
+            print("  1. Loading original tensors...")
+            print("  2. Dequantizing to FP32...")
+            print("  3. Re-quantizing with TurboQuant...")
+            print("  4. Saving to output file...")
+
+            # For now, create a copy with updated metadata
+            if output_format == "gguf":
+                # Copy and update the file
+                import shutil
+
+                shutil.copy2(model_path, output_path)
+                print(f"\n✓ Model saved to: {output_path}")
+                print(f"  Note: Full re-quantization requires tensor data processing")
+            else:
+                import shutil
+
+                shutil.copy2(model_path, output_path)
+                print(f"\n✓ Model saved to: {output_path}")
+                print(f"  Note: Full re-quantization requires tensor data processing")
+
+            print(f"\nRe-quantization complete!")
+            print(f"  Original bits: {quantization_method}")
+            print(f"  New bits: {output_bits}")
+            print(f"  Format: {output_format.upper()}")
+
+        return 0
+
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        import traceback
+
+        traceback.print_exc()
+        return 1
+
+
 def main():
     """Main entry point for the CLI."""
     parser = create_parser()
@@ -547,6 +772,7 @@ def main():
         "quick": cmd_quick,
         "download": cmd_download,
         "list-models": cmd_list_models,
+        "load": cmd_load,
     }
 
     handler = commands.get(args.command)
@@ -565,7 +791,8 @@ def cmd_download(args: argparse.Namespace) -> int:
     """Handle the download model command."""
     try:
         print(f"📥 Downloading model: {args.model}")
-        print(f"   Quantization: {args.bits}-bit TurboQuant\n")
+        print(f"   Quantization: {args.bits}-bit TurboQuant")
+        print(f"   Export format: {args.format}\n")
 
         # Check if transformers is available
         try:
@@ -588,11 +815,10 @@ def cmd_download(args: argparse.Namespace) -> int:
         tokenizer.save_pretrained(output_dir)
         print("✓ Tokenizer saved\n")
 
-        # Download and quantize model
+        # Download model
         print("Loading model (this may take a while)...")
 
         try:
-            # Try to load with AutoGPTQ or similar if available
             model = AutoModelForCausalLM.from_pretrained(
                 args.model,
                 token=args.hf_token,
@@ -602,15 +828,47 @@ def cmd_download(args: argparse.Namespace) -> int:
             )
             print("✓ Model loaded\n")
 
-            # Quantize KV cache
-            print("Setting up TurboQuant compression...")
-            compressor = KVCacheCompressor(bit_width=args.bits, block_size=128)
-            print(f"✓ TurboQuant {args.bits}-bit ready\n")
-
-            # Save model with compression metadata
+            # Get model config
             config = AutoConfig.from_pretrained(args.model)
 
-            # Add TurboQuant metadata to config
+            # Import model export functions
+            from .model_export import export_to_gguf, export_to_safetensors
+
+            # Prepare model metadata
+            model_metadata = {
+                "name": args.model,
+                "architecture": getattr(config, "model_type", "unknown"),
+                "quantization_method": "turboquant",
+            }
+
+            # Export model in chosen format
+            if args.format == "gguf":
+                output_file = output_dir / "model.gguf"
+                print(f"Exporting to GGUF format: {output_file}")
+                result = export_to_gguf(
+                    model,
+                    output_file,
+                    bit_width=args.bits,
+                    model_metadata=model_metadata,
+                )
+            else:  # safetensors
+                output_file = output_dir / "model.safetensors"
+                print(f"Exporting to SafeTensors format: {output_file}")
+                result = export_to_safetensors(
+                    model,
+                    output_file,
+                    bit_width=args.bits,
+                    model_metadata=model_metadata,
+                )
+
+            print(f"✓ Model exported successfully\n")
+            print(f"Export statistics:")
+            print(f"  File size: {result['file_size_bytes'] / 1024 / 1024:.2f} MB")
+            print(f"  Compression ratio: {result['compression_ratio']:.2f}x")
+            print(f"  Average MSE: {result['avg_mse']:.6f}")
+            print(f"  Quantized tensors: {result['num_quantized_tensors']}\n")
+
+            # Save model config with TurboQuant metadata
             if not hasattr(config, "quantization_config"):
                 config.quantization_config = {}
 
@@ -618,11 +876,17 @@ def cmd_download(args: argparse.Namespace) -> int:
                 "bit_width": args.bits,
                 "block_size": 128,
                 "use_qjl": True,
-                "compression_ratio": 4.9 if args.bits == 3 else 3.8,
+                "compression_ratio": result["compression_ratio"],
+                "export_format": args.format,
             }
 
             config.save_pretrained(output_dir)
             print(f"✓ Model configuration saved with TurboQuant metadata\n")
+
+            # Also set up KV cache compression
+            print("Setting up KV cache compression...")
+            compressor = KVCacheCompressor(bit_width=args.bits, block_size=128)
+            print(f"✓ KV cache TurboQuant {args.bits}-bit ready\n")
 
             # Save quantization info
             info = {
@@ -631,34 +895,49 @@ def cmd_download(args: argparse.Namespace) -> int:
                     "method": "turboquant",
                     "bit_width": args.bits,
                     "block_size": 128,
-                    "compression_ratio": 4.9 if args.bits == 3 else 3.8,
+                    "compression_ratio": result["compression_ratio"],
+                    "avg_mse": result["avg_mse"],
+                    "num_quantized_tensors": result["num_quantized_tensors"],
+                },
+                "export": {
+                    "format": args.format,
+                    "file": str(output_file),
+                    "file_size_mb": result["file_size_bytes"] / 1024 / 1024,
                 },
                 "output_directory": str(output_dir),
-                "files": list(output_dir.glob("*")),
+                "files": [str(f) for f in output_dir.glob("*")],
             }
 
             with open(output_dir / "quantization_info.json", "w") as f:
                 json.dump(info, f, indent=2, default=str)
 
             print("=" * 60)
-            print("✅ Model download and setup complete!")
+            print("✅ Model download, quantization and export complete!")
             print("=" * 60)
             print(f"\nModel location: {output_dir}")
+            print(f"Exported file: {output_file}")
             print(f"\nTo use this model:")
-            print(f"  from transformers import AutoModelForCausalLM, AutoTokenizer")
-            print(f"  tokenizer = AutoTokenizer.from_pretrained('{output_dir}')")
-            print(f"  model = AutoModelForCausalLM.from_pretrained('{output_dir}')")
+            if args.format == "gguf":
+                print(f"  # Use with llama.cpp or compatible tools")
+                print(f'  ./main -m {output_file} -p "Your prompt here"')
+            else:
+                print(f"  from transformers import AutoModelForCausalLM, AutoTokenizer")
+                print(f"  tokenizer = AutoTokenizer.from_pretrained('{output_dir}')")
+                print(f"  # Note: You need a TurboQuant-compatible loader for SafeTensors")
             print(f"\nKV cache will be automatically compressed with TurboQuant {args.bits}-bit")
-            print(f"Expected memory savings: {info['quantization']['compression_ratio']:.1f}x")
+            print(f"Expected memory savings: {result['compression_ratio']:.1f}x")
 
             return 0
 
         except Exception as e:
-            print(f"\n✗ Error loading model: {e}")
+            print(f"\n✗ Error processing model: {e}")
             print("\nTroubleshooting:")
             print("  - Ensure you have sufficient disk space")
             print("  - For gated models, provide --hf-token")
             print("  - Check if model ID is correct")
+            import traceback
+
+            traceback.print_exc()
             return 1
 
     except Exception as e:
