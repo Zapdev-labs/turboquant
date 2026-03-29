@@ -816,6 +816,44 @@ def cmd_chat(args: argparse.Namespace) -> int:
         return 1
 
 
+def _validate_hf_model(model_id: str, token: str | None = None) -> tuple[bool, str]:
+    """Quick validation if a HuggingFace model exists without downloading."""
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi(token=token)
+        api.model_info(model_id)
+        return True, ""
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "not found" in error_msg or "404" in error_msg:
+            return False, f"Model '{model_id}' not found on HuggingFace Hub"
+        elif "unauthorized" in error_msg or "401" in error_msg:
+            return False, f"Model '{model_id}' requires authentication - check your HF token"
+        else:
+            return False, f"Error validating model: {e}"
+
+
+def _format_suggestions(user_input: str) -> str:
+    """Provide helpful suggestions based on the user's input."""
+    suggestions = []
+    
+    # Check for common patterns in invalid model names
+    if "claude" in user_input.lower() or "opus" in user_input.lower() or "reasoning" in user_input.lower():
+        suggestions.append("It looks like you may have copied a description, not a model name")
+    
+    if "gguf" in user_input.lower():
+        suggestions.append("For GGUF models, try the 'owner/model-GGUF' format (e.g., 'bartowski/llama-3-8b-GGUF')")
+    
+    if "/" not in user_input:
+        suggestions.append("Most HuggingFace models use 'owner/model-name' format")
+        suggestions.append("Examples: 'Qwen/Qwen3.5-2B', 'meta-llama/Llama-3-8B', 'microsoft/Phi-4'")
+    
+    if not suggestions:
+        suggestions.append("Check the model name at https://huggingface.co/models")
+    
+    return "\n".join([f"  • {s}" for s in suggestions])
+
+
 def cmd_download(args: argparse.Namespace) -> int:
     """Handle the download model command."""
     try:
@@ -826,9 +864,20 @@ def cmd_download(args: argparse.Namespace) -> int:
         # Check if transformers is available
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
+            from huggingface_hub import HfApi
         except ImportError:
             print("Error: transformers library not found")
             print("Install with: pip install transformers torch")
+            return 1
+
+        # Validate model exists before proceeding
+        is_valid, error_msg = _validate_hf_model(args.model, args.hf_token)
+        if not is_valid:
+            print(f"\n❌ {error_msg}")
+            print(f"\n💡 Suggestions:")
+            print(_format_suggestions(args.model))
+            print(f"\nTo list available models:")
+            print(f"  turboquant list-models")
             return 1
 
         output_dir = Path(args.output or "./models") / args.model.replace("/", "--")
