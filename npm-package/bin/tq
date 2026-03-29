@@ -1,0 +1,12 @@
+#!/usr/bin/env node
+
+const { spawn } = require('child_process');
+
+// Shortcut to turboquant
+const path = require('path');
+const fs = require('fs');
+
+const turboquantPath = path.join(__dirname, 'turboquant');
+
+// Read and execute the main script
+require(turboquantPath);

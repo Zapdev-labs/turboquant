@@ -1,0 +1,39 @@
+{
+  "name": "turboquant",
+  "version": "0.1.0",
+  "description": "TurboQuant: Extreme compression for AI models via Python bindings",
+  "main": "index.js",
+  "bin": {
+    "turboquant": "./bin/turboquant",
+    "tq": "./bin/tq"
+  },
+  "scripts": {
+    "install": "node install.js",
+    "test": "node test.js",
+    "postinstall": "echo 'TurboQuant installed. Run: turboquant --help'"
+  },
+  "keywords": [
+    "quantization",
+    "compression",
+    "llm",
+    "ai",
+    "machine-learning",
+    "kv-cache"
+  ],
+  "author": "TurboQuant Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/turboquant/turboquant"
+  },
+  "bugs": {
+    "url": "https://github.com/turboquant/turboquant/issues"
+  },
+  "homepage": "https://github.com/turboquant/turboquant",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "dependencies": {
+    "child_process": "^1.0.2"
+  }
+}
