@@ -209,6 +209,45 @@ Examples:
     quick_parser.add_argument("input", type=str, help="Input file")
     quick_parser.add_argument("output", type=str, nargs="?", help="Output file (optional)")
 
+    # Chat command - Interactive chat server for T3code integration
+    chat_parser = subparsers.add_parser(
+        "chat", help="Run interactive chat server (for T3code integration)"
+    )
+    chat_parser.add_argument(
+        "model_path",
+        type=str,
+        help="Path to GGUF model file",
+    )
+    chat_parser.add_argument(
+        "--context-length",
+        "-c",
+        type=int,
+        default=4096,
+        help="Context length (default: 4096)",
+    )
+    chat_parser.add_argument(
+        "--turboquant-bits",
+        "-b",
+        type=int,
+        default=3,
+        choices=[2, 3, 4],
+        help="TurboQuant bit-width for KV cache compression (default: 3)",
+    )
+    chat_parser.add_argument(
+        "--gpu-layers",
+        "-g",
+        type=int,
+        default=-1,
+        help="GPU layers (-1 for auto, 0 for CPU only, default: -1)",
+    )
+    chat_parser.add_argument(
+        "--system-prompt",
+        "-s",
+        type=str,
+        default="You are a helpful AI assistant.",
+        help="System prompt (default: 'You are a helpful AI assistant.')",
+    )
+
     return parser
 
 
@@ -753,38 +792,28 @@ def cmd_load(args: argparse.Namespace) -> int:
         return 1
 
 
-def main():
-    """Main entry point for the CLI."""
-    parser = create_parser()
-    args = parser.parse_args()
+def cmd_chat(args: argparse.Namespace) -> int:
+    """Handle the chat command - run interactive chat server via stdio."""
+    try:
+        from .chat_server import run_chat_server
 
-    if not args.command:
-        parser.print_help()
+        return run_chat_server(
+            model_path=args.model_path,
+            context_length=args.context_length,
+            turboquant_bits=args.turboquant_bits,
+            gpu_layers=args.gpu_layers,
+            system_prompt=args.system_prompt,
+        )
+    except ImportError as e:
+        print(f"Error: Chat server dependencies not installed: {e}", file=sys.stderr)
+        print("Install with: pip install llama-cpp-python", file=sys.stderr)
         return 1
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        import traceback
 
-    # Dispatch to appropriate command handler
-    commands = {
-        "compress": cmd_compress,
-        "decompress": cmd_decompress,
-        "benchmark": cmd_benchmark,
-        "kv-analyze": cmd_kv_analyze,
-        "info": cmd_info,
-        "quick": cmd_quick,
-        "download": cmd_download,
-        "list-models": cmd_list_models,
-        "load": cmd_load,
-    }
-
-    handler = commands.get(args.command)
-    if handler:
-        return handler(args)
-    else:
-        parser.print_help()
+        traceback.print_exc()
         return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
 
 
 def cmd_download(args: argparse.Namespace) -> int:
@@ -952,8 +981,10 @@ def cmd_list_models(args: argparse.Namespace) -> int:
     """Handle the list-models command."""
 
     # Popular pre-quantized models organized by category
+    # Default model: Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF
     models = {
         "7b": [
+            {"id": "Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF", "desc": "Qwen3.5 9B Gemini 3.1 Pro Reasoning Distill (DEFAULT)", "size": "5.5 GB", "default": True},
             {"id": "TheBloke/Llama-2-7B-GPTQ", "desc": "Llama 2 7B GPTQ 4-bit", "size": "4.1 GB"},
             {"id": "TheBloke/Llama-2-7B-AWQ", "desc": "Llama 2 7B AWQ 4-bit", "size": "4.1 GB"},
             {"id": "TheBloke/Mistral-7B-v0.1-GPTQ", "desc": "Mistral 7B GPTQ", "size": "4.1 GB"},
@@ -996,7 +1027,8 @@ def cmd_list_models(args: argparse.Namespace) -> int:
     print("=" * 80)
     print("Available Pre-Quantized Models")
     print("=" * 80)
-    print("\nInstall with: turboquant download <model_id> --bits 3|4\n")
+    print("\nInstall with: turboquant download <model_id> --bits 3|4")
+    print("\n👑 DEFAULT: turboquant download Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF\n")
 
     categories = [args.category] if args.category != "all" else ["7b", "13b", "70b", "chat", "code"]
 
@@ -1007,12 +1039,49 @@ def cmd_list_models(args: argparse.Namespace) -> int:
             print(f"{'=' * 40}\n")
 
             for model in models[cat]:
-                print(f"  {model['id']}")
+                default_marker = " ⭐ DEFAULT" if model.get("default") else ""
+                print(f"  {model['id']}{default_marker}")
                 print(f"    {model['desc']}")
                 print(f"    Size: ~{model['size']}\n")
 
     print("\n" + "=" * 80)
     print("💡 Tip: Use --bits 3 for maximum compression or --bits 4 for better quality")
+    print("👑 Recommended: turboquant download Jackrong/Qwen3.5-9B-Gemini-3.1-Pro-Reasoning-Distill-GGUF")
     print("=" * 80)
 
     return 0
+
+
+def main():
+    """Main entry point for the CLI."""
+    parser = create_parser()
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        return 1
+
+    # Dispatch to appropriate command handler
+    commands = {
+        "compress": cmd_compress,
+        "decompress": cmd_decompress,
+        "benchmark": cmd_benchmark,
+        "kv-analyze": cmd_kv_analyze,
+        "info": cmd_info,
+        "quick": cmd_quick,
+        "download": cmd_download,
+        "list-models": cmd_list_models,
+        "load": cmd_load,
+        "chat": cmd_chat,
+    }
+
+    handler = commands.get(args.command)
+    if handler:
+        return handler(args)
+    else:
+        parser.print_help()
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
