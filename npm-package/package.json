@@ -4,8 +4,8 @@
   "description": "TurboQuant: Extreme compression for AI models with GGUF and SafeTensors export",
   "main": "index.js",
   "bin": {
-    "turboquant": "./bin/turboquant",
-    "tq": "./bin/tq"
+    "turboquant": "bin/turboquant",
+    "tq": "bin/tq"
   },
   "scripts": {
     "install": "node install.js",
@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/zapdev-labs/turboquant"
+    "url": "git+https://github.com/zapdev-labs/turboquant.git"
   },
   "bugs": {
     "url": "https://github.com/zapdev-labs/turboquant/issues"
