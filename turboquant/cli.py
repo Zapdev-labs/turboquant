@@ -845,6 +845,58 @@ def _format_suggestions(user_input: str) -> str:
     return "\n".join([f"  • {s}" for s in suggestions])
 
 
+def _check_gguf_only_repo(model_id: str, token: str | None = None) -> tuple[bool, list[str]]:
+    """Check if a HuggingFace repo only contains GGUF files (no transformers model).
+
+    Returns:
+        (is_gguf_only, files_list)
+    """
+    try:
+        from huggingface_hub import HfApi
+
+        api = HfApi(token=token)
+        files = list(api.list_repo_files(model_id))
+
+        # Check for files that indicate a full transformers model
+        has_transformers_files = any(
+            f.endswith((".bin", ".safetensors", "config.json", "pytorch_model.bin"))
+            and not f.endswith(".gguf")
+            for f in files
+        )
+
+        has_gguf_files = any(f.endswith(".gguf") for f in files)
+
+        # It's a GGUF-only repo if it has GGUF files but no transformers files
+        is_gguf_only = has_gguf_files and not has_transformers_files
+
+        return is_gguf_only, files
+    except Exception:
+        return False, []
+
+
+def _check_disk_space(path: Path, required_gb: float) -> tuple[bool, float]:
+    """Check if there's enough disk space at the given path.
+
+    Args:
+        path: Path to check (will use parent directory if file)
+        required_gb: Required space in GB
+
+    Returns:
+        (has_space, available_gb)
+    """
+    import shutil
+
+    # Get the directory to check
+    check_path = path if path.is_dir() else path.parent
+    check_path.mkdir(parents=True, exist_ok=True)
+
+    # Get disk usage
+    usage = shutil.disk_usage(check_path)
+    available_gb = usage.free / (1024**3)
+
+    return available_gb >= required_gb, available_gb
+
+
 def cmd_download(args: argparse.Namespace) -> int:
     """Handle the download model command."""
     try:
@@ -871,7 +923,42 @@ def cmd_download(args: argparse.Namespace) -> int:
             print(f"  turboquant list-models")
             return 1
 
+        # Check if this is a GGUF-only repo
+        is_gguf_only, repo_files = _check_gguf_only_repo(args.model, args.hf_token)
+        if is_gguf_only:
+            print(f"\n❌ Model '{args.model}' is a pre-quantized GGUF model repository.")
+            print(f"\n💡 This model cannot be downloaded with the 'download' command.")
+            print(f"   The download command only works with full transformers models.")
+            print(f"\n📋 Available GGUF files in this repo:")
+            gguf_files = [f for f in repo_files if f.endswith(".gguf")]
+            displayed_files = gguf_files[:10]
+            remaining_count = len(gguf_files) - 10
+            for f in displayed_files:
+                print(f"   • {f}")
+            if remaining_count > 0:
+                print(f"   ... and {remaining_count} more")
+            print(f"\n✅ To use this model:")
+            print(f"   1. Download directly from HuggingFace:")
+            print(f"      huggingface-cli download {args.model}")
+            print(f"   2. Or use with llama.cpp directly:")
+            print(f"      llama-cli --hf-repo {args.model} --hf-file <filename.gguf>")
+            print(f"   3. Or download and use the 'load' command:")
+            print(f"      turboquant load /path/to/downloaded/model.gguf --info")
+            return 1
+
         output_dir = Path(args.output or "./models") / args.model.replace("/", "--")
+
+        CONSERVATIVE_SIZE_ESTIMATE_GB = 5.0
+        has_space, available_gb = _check_disk_space(output_dir, CONSERVATIVE_SIZE_ESTIMATE_GB)
+        if not has_space:
+            print(f"\n❌ Insufficient disk space!")
+            print(f"   Available: {available_gb:.2f} GB")
+            print(f"   Estimated required: ~{CONSERVATIVE_SIZE_ESTIMATE_GB:.2f} GB")
+            print(f"\n💡 Free up some disk space or specify a different output directory:")
+            print(f"   turboquant download {args.model} --output /path/with/more/space")
+            return 1
+
+        print(f"✓ Disk space check passed: {available_gb:.2f} GB available")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"Output directory: {output_dir}\n")
@@ -1017,11 +1104,6 @@ def cmd_download(args: argparse.Namespace) -> int:
 
     except Exception as e:
         return handle_error(e, "download")
-        print(f"Error: {e}", file=sys.stderr)
-        import traceback
-
-        traceback.print_exc()
-        return 1
 
 
 def cmd_list_models(args: argparse.Namespace) -> int:
