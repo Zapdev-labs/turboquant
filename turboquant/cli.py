@@ -964,6 +964,7 @@ def cmd_download(args: argparse.Namespace) -> int:
         print(f"Output directory: {output_dir}\n")
 
         # Download tokenizer
+        # Download tokenizer
         print("Downloading tokenizer...")
         try:
             tokenizer = AutoTokenizer.from_pretrained(
@@ -993,16 +994,54 @@ def cmd_download(args: argparse.Namespace) -> int:
             # Get model config
             config = AutoConfig.from_pretrained(args.model)
 
-            # Import model export functions
-            from .model_export import export_to_gguf, export_to_safetensors
+            # Handle newer model configs where vocab_size might be nested
+            # (e.g., Gemma3, Qwen3.5 store vocab_size in text_config)
+            if not hasattr(config, "vocab_size") and hasattr(config, "text_config"):
+                config = config.text_config
 
-            # Prepare model metadata
-            model_metadata = {
-                "name": args.model,
-                "architecture": getattr(config, "model_type", "unknown"),
-                "quantization_method": "turboquant",
-            }
+        except AttributeError as e:
+            if "vocab_size" in str(e):
+                print(f"\n✗ Error: Model config missing 'vocab_size' attribute")
+                print("   This is a known compatibility issue with newer model architectures.")
+                print("\n💡 Try updating transformers:")
+                print("   pip install -U transformers>=4.50.0")
+                return 1
+            raise
 
+        except Exception as e:
+            error_msg = str(e)
+            print(f"\n✗ Error loading model: {error_msg}")
+
+            if "vocab_size" in error_msg.lower():
+                print(
+                    "\n📋 This is a known compatibility issue with newer models (e.g., Qwen3.5, Gemma3)."
+                )
+                print("   The model config structure has changed in recent versions.")
+                print("\n💡 Try one of these solutions:")
+                print("   1. Update transformers: pip install -U transformers>=4.50.0")
+                print("   2. Try a different model with older architecture")
+                print("   3. Download the GGUF version directly from HuggingFace")
+                print("\nTroubleshooting:")
+                print("  - Ensure you have sufficient disk space")
+                print("  - For gated models, provide --hf-token")
+                print("  - Check if model ID is correct")
+                print("  - Try: pip install -U transformers accelerate")
+                import traceback
+
+                traceback.print_exc()
+            return 1
+
+        # Import model export functions
+        from .model_export import export_to_gguf, export_to_safetensors
+
+        # Prepare model metadata
+        model_metadata = {
+            "name": args.model,
+            "architecture": getattr(config, "model_type", "unknown"),
+            "quantization_method": "turboquant",
+        }
+
+        try:
             # Export model in chosen format
             if args.format == "gguf":
                 output_file = output_dir / "model.gguf"
@@ -1092,11 +1131,13 @@ def cmd_download(args: argparse.Namespace) -> int:
             return 0
 
         except Exception as e:
-            print(f"\n✗ Error processing model: {e}")
+            error_msg = str(e)
+            print(f"\n✗ Error processing model: {error_msg}")
             print("\nTroubleshooting:")
             print("  - Ensure you have sufficient disk space")
             print("  - For gated models, provide --hf-token")
             print("  - Check if model ID is correct")
+            print("  - Try: pip install -U transformers accelerate")
             import traceback
 
             traceback.print_exc()
