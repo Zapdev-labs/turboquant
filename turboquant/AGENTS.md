@@ -19,7 +19,9 @@ turboquant/
 ├── cli.py               # Command-line interface
 ├── transforms.py        # Walsh-Hadamard & polar transforms
 ├── codebooks.py         # Lloyd-Max codebook generation
-└── utils.py             # Bit-packing utilities
+├── utils.py             # Bit-packing utilities
+├── clipboard.py         # Clipboard integration
+└── chat_server.py       # Chat server utilities
 ```
 
 ## WHERE TO LOOK
@@ -87,13 +89,16 @@ From `pyproject.toml`:
 - **Ruff:** Selects E, F, I, N, W, UP, B, C4, SIM rules
 - **MyPy:** Strict mode, Python 3.8 target
 - **Black:** 100 char line length
-- **Pytest:** Test pattern `test_*.py` in `tests/` (not yet created)
+- **Pytest:** Test pattern `test_*.py` in `tests/`
 
 ## DEPENDENCIES
 
 **Runtime:**
 - `numpy>=1.20.0`
 - `typing-extensions>=4.0.0` (Python <3.10)
+- `sentencepiece>=0.1.99`
+- `tiktoken>=0.5.0`
+- `pyperclip>=1.8.0`
 
 **Optional:**
 - `torch>=2.0.0` (PyTorch integration)

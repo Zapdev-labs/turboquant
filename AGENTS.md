@@ -1,6 +1,7 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-03-29
+**Generated:** 2026-03-31
+**Updated:** 2026-03-31
 **Project:** TurboQuant Clone
 **Type:** Multi-language monorepo (Python + Node.js)
 
@@ -8,14 +9,14 @@
 
 TurboQuant is a production-quality implementation of Google's quantization algorithm for extreme AI model compression (3-bit with near-zero loss). This monorepo contains:
 - **Core Python library** (`turboquant/`) - PolarQuant, QJL, and TurboQuant algorithms
-- **Electron desktop app** (`electron-app/`) - Next.js 15 + React 19 + Electron 33 desktop UI
-- **NPM CLI wrapper** (`npm-package/`) - Global CLI wrapper for Python library
+- **NPM CLI wrapper** (`npm-package/`) - Global CLI wrapper with interactive TUI
+- **Test suite** (`tests/`) - Minimal pytest validation
 
 ## STRUCTURE
 
 ```
 turboquant-clone/
-├── turboquant/              # Python library source
+├── turboquant/              # Python library source (12 modules)
 │   ├── __init__.py         # Public API exports
 │   ├── turboquant.py       # Main algorithm
 │   ├── polarquant.py       # PolarQuant implementation
@@ -24,14 +25,13 @@ turboquant-clone/
 │   ├── model_export.py     # GGUF/SafeTensors export
 │   ├── cli.py              # CLI entry point
 │   └── utils.py            # Utilities
-├── electron-app/            # Desktop application
-│   ├── app/                # Next.js App Router
-│   ├── components/         # React components
-│   ├── electron/           # Electron main process
-│   └── stores/             # Zustand state
-├── npm-package/             # NPM CLI wrapper
-│   └── bin/                # CLI binaries
-└── .github/workflows/       # CI/CD
+├── npm-package/             # NPM CLI wrapper with TUI
+│   ├── bin/                # CLI binaries (turboquant, tq)
+│   ├── src/tui.tsx         # Interactive Terminal UI (React)
+│   └── package.json        # NPM manifest
+├── tests/                   # Test suite (minimal)
+├── models/                  # Downloaded model artifacts
+└── .github/workflows/       # CI/CD (NPM publish only)
 ```
 
 ## WHERE TO LOOK
@@ -44,8 +44,7 @@ turboquant-clone/
 | KV cache | `turboquant/kv_cache.py` | Transformer cache compression |
 | Model export | `turboquant/model_export.py` | GGUF/SafeTensors support |
 | CLI commands | `turboquant/cli.py` | argparse subcommands |
-| Desktop UI | `electron-app/app/` | Next.js pages |
-| Electron main | `electron-app/electron/main.js` | Main process |
+| TUI interface | `npm-package/src/tui.tsx` | React-based terminal UI |
 | NPM wrapper | `npm-package/bin/turboquant` | Node-to-Python delegation |
 
 ## CONVENTIONS
@@ -59,7 +58,7 @@ turboquant-clone/
 ### JavaScript/TypeScript (Global)
 - **Path alias:** `@/*` maps to `./*`
 - **Components:** PascalCase in PascalCase folders
-- **Styling:** Tailwind v4 with CSS-based config
+- **TUI:** Bun runtime required for interactive mode
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -70,15 +69,16 @@ turboquant-clone/
 
 ## UNIQUE STYLES
 
-### Tailwind v4 (Electron App)
-- No `tailwind.config.js` - configuration in `globals.css` via `@theme`
-- Uses `@tailwindcss/postcss` instead of traditional setup
-- Custom CSS variables for theming
-
 ### NPM Wrapper Pattern
 - Thin Node.js wrapper that auto-installs Python via pip
 - Handles Python detection (`python3`, `python`, `py`)
 - Delegates all commands to Python CLI
+- **TUI Mode:** Requires Bun runtime; falls back to CLI without it
+
+### Bun-First TUI
+- Interactive UI built with React + @opentui/core
+- Bun-specific dependencies (@opentui/react)
+- Falls back to plain CLI if Bun unavailable
 
 ## COMMANDS
 
@@ -95,43 +95,37 @@ ruff check .                        # Lint
 mypy turboquant/                    # Type check
 
 # Test
-pytest                              # Run tests (tests/ doesn't exist yet)
+pytest                              # Run tests (tests/ minimal)
 
 # CLI
 turboquant --help                   # Full command
 tq --help                           # Short alias
 ```
 
-### Electron App Development
-```bash
-cd electron-app
-
-# Development
-bun run dev                         # Concurrent Next.js + Electron
-bun run dev:next                    # Next.js dev server only
-bun run dev:electron                # Electron dev (waits for Next.js)
-
-# Building
-bun run build                       # Build Next.js static export
-bun run build:electron              # Build + package Electron app
-bun run dist                        # Full distribution
-
-# Quality
-bun run lint                        # ESLint
-bun run type-check                  # TypeScript check
-```
-
-### NPM Package
+### NPM Package Development
 ```bash
 cd npm-package
+
+# Install
 npm install                         # Runs install.js postinstall
-npm test                            # Runs test.js
+
+# Development
+bun src/tui.tsx                     # Run TUI directly
+npm run tui                         # Same as above
+
+# Building
+npm run build                       # Compile TypeScript
+npm run test                        # Run validation tests
+
+# Usage
+tq                                  # Launch TUI (requires Bun)
+turboquant --help                   # CLI mode
 ```
 
 ## NOTES
 
-- **Missing tests/:** `pyproject.toml` references `tests/` but directory doesn't exist
+- **Missing tests/:** `pyproject.toml` references `tests/` but only has 1 test file
 - **No root lockfile:** Each JS subproject manages deps independently
-- **Dual Next.js configs:** Both `next.config.ts` and `next.config.js` exist in electron-app
 - **Python 3.8+ required:** Minimum version specified in `pyproject.toml`
-- **Electron targets:** macOS (DMG), Windows (NSIS), Linux (AppImage)
+- **Bun for TUI:** Interactive mode requires Bun; CLI works with Node
+- **CI/CD:** Only NPM publishing workflow exists (no Python CI)
