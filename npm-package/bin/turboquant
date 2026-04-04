@@ -3,6 +3,7 @@
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const os = require('os');
+const PYTHON_SOURCE = 'git+https://github.com/zapdev-labs/turboquant.git';
 
 // Color codes for terminal output
 const RESET = '\x1b[0m';
@@ -101,6 +102,15 @@ function findPython() {
   return null;
 }
 
+function hasTurboQuantRuntime(python) {
+  const result = spawnSync(
+    python,
+    ['-c', 'import numpy; import turboquant'],
+    { stdio: 'ignore', shell: false }
+  );
+  return result.status === 0;
+}
+
 // Check if we should launch TUI
 const shouldLaunchTUI = process.argv.length <= 2;
 
@@ -170,6 +180,18 @@ if (!python) {
   console.error('');
   console.error('Then install TurboQuant:');
   console.error(`  ${CYAN}pip install turboquant${RESET}`);
+  process.exit(1);
+}
+
+if (!hasTurboQuantRuntime(python)) {
+  console.error(`${RED}Error: TurboQuant Python package/dependencies are missing.${RESET}`);
+  console.error('');
+  console.error('Run one of these to fix it:');
+  console.error(`  ${CYAN}${python} -m pip install --upgrade ${PYTHON_SOURCE}${RESET}`);
+  console.error(`  ${CYAN}${python} -m pip install --user --upgrade ${PYTHON_SOURCE}${RESET}`);
+  console.error('');
+  console.error('If pip is missing, install it first (Ubuntu/Debian):');
+  console.error(`  ${CYAN}sudo apt install python3-pip${RESET}`);
   process.exit(1);
 }
 
