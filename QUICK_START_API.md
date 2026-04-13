@@ -2,10 +2,16 @@
 
 ## ✅ What You Have Now
 
-### 1. **Installed TurboQuant** (via uv)
-- Location: `/home/midwe/turboquant/`
+### 1. **Installed TurboQuant**
+- PyPI package: `fastvq` (installs as `turboquant`)
+- Location: `/home/midwe/turboquant/` (source)
 - Virtual env: `.venv/`
 - TurboQuant algorithms ready to use
+
+**Install anywhere:**
+```bash
+pip install fastvq  # installs as import turboquant
+```
 
 ### 2. **Downloaded Model**
 - Model: `freakyskittle/gemma-4-9b-it-Q2_K` (Gemma 4 31B)

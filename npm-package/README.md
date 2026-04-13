@@ -4,6 +4,14 @@ CLI wrapper for TurboQuant Python library - install globally to use `turboquant`
 
 ## Installation
 
+### Prerequisites
+
+The underlying Python package is `fastvq` on PyPI (imports as `turboquant`):
+
+```bash
+pip install fastvq
+```
+
 ### Option 1: Global Install (Recommended)
 ```bash
 npm install -g turboquant
@@ -118,7 +126,7 @@ This NPM package is a thin wrapper that:
 3. Provides an interactive TUI when run without arguments (requires Bun)
 4. Delegates all commands to the Python CLI
 
-The actual quantization algorithms run in Python for performance.
+The actual quantization algorithms run in Python for performance. The Python package is `fastvq` on PyPI.
 
 ## Links
 

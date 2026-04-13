@@ -4,15 +4,29 @@ Get up and running with TurboQuant in 5 minutes.
 
 ## Installation
 
+### From PyPI (Recommended)
+
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd turboquant-clone
+pip install fastvq
+```
 
-# Install the package
+The package is published as **`fastvq`** on PyPI, but imports as `turboquant`:
+
+```python
+import turboquant  # even though you installed 'fastvq'
+```
+
+### From Source
+
+```bash
+git clone https://github.com/turboquant/turboquant
+cd turboquant
 pip install -e .
+```
 
-# Verify installation
+### Verify Installation
+
+```bash
 turboquant --help
 tq --help  # Short alias
 ```

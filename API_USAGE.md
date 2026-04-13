@@ -2,6 +2,20 @@
 
 ## 🚀 Quick Start
 
+### Installation
+
+```bash
+# From PyPI (recommended)
+pip install fastvq
+
+# From source
+git clone https://github.com/turboquant/turboquant
+cd turboquant
+pip install -e .
+```
+
+**Note:** Package is `fastvq` on PyPI, imports as `turboquant`.
+
 ### 1. Start the API Server
 
 ```bash

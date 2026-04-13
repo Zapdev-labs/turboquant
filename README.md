@@ -53,9 +53,26 @@ Bit-width    Compression    MSE          Cosine Similarity
 
 ## Installation
 
+### From PyPI (Recommended)
+
 ```bash
-cd turboquant-clone
-python -c "import turboquant; print('TurboQuant installed successfully!')"
+pip install fastvq
+```
+
+### From Source
+
+```bash
+git clone https://github.com/turboquant/turboquant
+cd turboquant
+pip install -e .
+```
+
+**Note:** The package is published as `fastvq` on PyPI, but imports as `turboquant`:
+
+```python
+# Install: pip install fastvq
+import turboquant
+print(turboquant.__version__)
 ```
 
 ## Quick Start

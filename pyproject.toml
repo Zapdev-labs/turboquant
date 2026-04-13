@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0", "numpy>=1.20.0"]
+requires = ["setuptools>=61.0", "wheel", "numpy>=1.20.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "turboquant"
-dynamic = ["version"]
+name = "fastvq"
+version = "0.1.2"
 description = "TurboQuant: Extreme compression for AI models with near-optimal distortion rates"
 readme = "README.md"
 license = {text = "MIT"}
@@ -57,11 +57,11 @@ turboquant = "turboquant.cli:main"
 tq = "turboquant.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/turboquant/turboquant"
+Homepage = "https://github.com/Zapdev-labs/Turboquant"
 Documentation = "https://turboquant.readthedocs.io"
-Repository = "https://github.com/turboquant/turboquant"
-Issues = "https://github.com/turboquant/turboquant/issues"
-Changelog = "https://github.com/turboquant/turboquant/blob/main/CHANGELOG.md"
+Repository = "https://github.com/Zapdev-labs/Turboquant.git"
+Issues = "https://github.com/Zapdev-labs/Turboquant/issues"
+Changelog = "https://github.com/Zapdev-labs/Turboquant/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -91,4 +91,4 @@ python_functions = ["test_*"]
 
 [tool.setuptools_scm]
 write_to = "turboquant/_version.py"
-fallback_version = "0.1.0"
+fallback_version = "0.1.1"

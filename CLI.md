@@ -4,11 +4,30 @@ The `turboquant` CLI provides a comprehensive interface for compressing, analyzi
 
 ## Installation
 
-```bash
-# From source
-pip install -e .
+### From PyPI (Recommended)
 
-# Verify installation
+```bash
+pip install fastvq
+```
+
+**Note:** Package name is `fastvq` on PyPI, but imports as `turboquant`:
+
+```python
+# Install: pip install fastvq
+import turboquant
+```
+
+### From Source
+
+```bash
+git clone https://github.com/turboquant/turboquant
+cd turboquant
+pip install -e .
+```
+
+### Verify Installation
+
+```bash
 turboquant --help
 tq --help  # Short alias
 ```
