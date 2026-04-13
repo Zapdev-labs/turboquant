@@ -20,7 +20,7 @@ import turboquant
 ### From Source
 
 ```bash
-git clone https://github.com/turboquant/turboquant
+git clone https://github.com/Zapdev-labs/turboquant
 cd turboquant
 pip install -e .
 ```
