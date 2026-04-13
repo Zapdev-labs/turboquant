@@ -41,6 +41,9 @@ Thumbs.db
 .coverage
 htmlcov/
 
+# Auto-generated version file
+turboquant/_version.py
+
 # Jupyter
 .ipynb_checkpoints/
 

@@ -19,8 +19,11 @@ Based on:
 - PolarQuant paper (Han et al., 2025): https://arxiv.org/abs/2502.02617
 """
 
-__version__ = "0.1.0"
-__author__ = "TurboQuant Clone"
+try:
+    from ._version import version as __version__
+except ImportError:
+    __version__ = "0.1.0"
+__author__ = "TurboQuant Contributors"
 
 from .turboquant import TurboQuant, TurboQuantConfig
 from .polarquant import PolarQuant

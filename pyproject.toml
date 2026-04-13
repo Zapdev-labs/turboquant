@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "numpy>=1.20.0"]
+requires = ["setuptools>=61.0", "wheel", "setuptools-scm>=8.0", "numpy>=1.20.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "turboquant"
-version = "0.1.0"
+dynamic = ["version"]
 description = "TurboQuant: Extreme compression for AI models with near-optimal distortion rates"
 readme = "README.md"
 license = {text = "MIT"}
@@ -88,3 +88,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+
+[tool.setuptools_scm]
+write_to = "turboquant/_version.py"
+fallback_version = "0.1.0"
