@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import json
 import numpy as np
@@ -131,7 +132,8 @@ Examples:
         help="Model ID (e.g., meta-llama/Llama-2-7b-hf, TheBloke/Llama-2-7B-GPTQ)",
     )
     download_parser.add_argument(
-        "--output", "-o", type=str, help="Output directory (default: ./models)"
+        "--output", "-o", type=str,
+        help="Output directory (default: ./models, or set TURBOQUANT_MODELS_DIR env var)"
     )
     download_parser.add_argument(
         "--bits",
@@ -946,7 +948,9 @@ def cmd_download(args: argparse.Namespace) -> int:
             print(f"      turboquant load /path/to/downloaded/model.gguf --info")
             return 1
 
-        output_dir = Path(args.output or "./models") / args.model.replace("/", "--")
+        # Support environment variable override for download directory
+        default_output = os.environ.get("TURBOQUANT_MODELS_DIR", "./models")
+        output_dir = Path(args.output or default_output) / args.model.replace("/", "--")
 
         CONSERVATIVE_SIZE_ESTIMATE_GB = 5.0
         has_space, available_gb = _check_disk_space(output_dir, CONSERVATIVE_SIZE_ESTIMATE_GB)
