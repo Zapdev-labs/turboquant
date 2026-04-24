@@ -1,7 +1,0 @@
-bun.lock
-tsconfig.json
-AGENTS.md
-test.js
-demo.js
-node_modules/
-*.tgz

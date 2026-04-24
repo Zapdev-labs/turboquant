@@ -1,6 +1,7 @@
-import numpy as np
-from typing import Dict, Optional
+from contextlib import suppress
+from typing import Dict
 
+import numpy as np
 
 # Pre-computed Lloyd-Max codebooks for different bit-widths and dimensions
 # These are optimal quantization centroids for Beta-distributed coordinates
@@ -9,9 +10,7 @@ from typing import Dict, Optional
 _LLOYD_MAX_CODEBOOKS: Dict[tuple, np.ndarray] = {}
 
 
-def _generate_lloyd_max_centroids(
-    bit_width: int, dim: int, max_iter: int = 100
-) -> np.ndarray:
+def _generate_lloyd_max_centroids(bit_width: int, dim: int, max_iter: int = 100) -> np.ndarray:
     """Generate optimal Lloyd-Max quantization centroids.
 
     Lloyd-Max algorithm iteratively optimizes quantization centroids:
@@ -49,7 +48,7 @@ def _generate_lloyd_max_centroids(
     centroids = np.linspace(-1, 1, n_levels)
 
     # Lloyd-Max iterations
-    for iteration in range(max_iter):
+    for _iteration in range(max_iter):
         # Assign samples to nearest centroid
         distances = np.abs(samples[:, np.newaxis] - centroids)
         assignments = np.argmin(distances, axis=1)
@@ -57,9 +56,7 @@ def _generate_lloyd_max_centroids(
         # Update centroids to mean of assigned samples
         new_centroids = np.array(
             [
-                samples[assignments == i].mean()
-                if (assignments == i).any()
-                else centroids[i]
+                samples[assignments == i].mean() if (assignments == i).any() else centroids[i]
                 for i in range(n_levels)
             ]
         )
@@ -121,9 +118,7 @@ def dequantize_with_codebook(indices: np.ndarray, codebook: np.ndarray) -> np.nd
     return codebook[indices]
 
 
-def generate_codebook(
-    bit_width: int, dim: int = 128, distribution: str = "beta"
-) -> np.ndarray:
+def generate_codebook(bit_width: int, dim: int = 128, distribution: str = "beta") -> np.ndarray:
     """Generate a custom quantization codebook.
 
     Args:
@@ -153,7 +148,5 @@ def generate_codebook(
 # Pre-generate common codebooks
 for bw in [1, 2, 3, 4, 5, 6, 7, 8]:
     for d in [32, 64, 128, 256]:
-        try:
+        with suppress(Exception):
             _ = get_lloyd_max_codebook(bw, d)
-        except:
-            pass

@@ -1,5 +1,6 @@
-import numpy as np
 from typing import Dict, Optional
+
+import numpy as np
 
 
 class QJL:
@@ -24,9 +25,7 @@ class QJL:
     ):
         self.block_size = block_size
         self.rotation_seed = rotation_seed
-        self.jl_dim: int = (
-            jl_dim if jl_dim is not None else block_size
-        )  # Output dimension
+        self.jl_dim: int = jl_dim if jl_dim is not None else block_size  # Output dimension
 
         # Generate JL matrix
         self.jl_matrix = self._generate_jl_matrix()
@@ -39,15 +38,13 @@ class QJL:
         Returns:
             Projection matrix of shape (jl_dim, block_size)
         """
-        np.random.seed(self.rotation_seed + 1000)  # Different seed from rotation
-
-        # Gaussian random matrix
-        S = np.random.randn(self.jl_dim, self.block_size)
+        rng = np.random.default_rng(self.rotation_seed + 1000)
+        projection = rng.standard_normal((self.jl_dim, self.block_size))
 
         # Scale for JL lemma preservation
-        S = S / np.sqrt(self.jl_dim)
+        projection = projection / np.sqrt(self.jl_dim)
 
-        return S.astype(np.float32)
+        return projection.astype(np.float32)
 
     def quantize(self, x: np.ndarray) -> Dict:
         """Quantize vectors using QJL (1-bit sign quantization).
@@ -63,12 +60,7 @@ class QJL:
         # Apply JL transform
         x_projected = x @ self.jl_matrix.T
 
-        # Sign-bit quantization
-        signs = np.sign(x_projected)
-        signs[signs == 0] = 1  # Handle zeros
-
-        # Convert to binary (0/1) for efficient storage
-        signs_binary = (signs > 0).astype(np.uint8)
+        signs_binary = np.greater_equal(x_projected, 0).astype(np.uint8)
 
         return {
             "signs": signs_binary,

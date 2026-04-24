@@ -1,5 +1,5 @@
 """
-TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate
+FastVQ / TurboQuant: Online Vector Quantization with Near-optimal Distortion Rate
 
 A production-quality implementation of Google's TurboQuant algorithm for extreme
 compression of AI models (KV cache and weights).
@@ -22,26 +22,34 @@ Based on:
 try:
     from ._version import version as __version__
 except ImportError:
-    __version__ = "0.1.0"
-__author__ = "TurboQuant Contributors"
+    __version__ = "0.2.0"
+__author__ = "FastVQ Contributors"
 
-from .turboquant import TurboQuant, TurboQuantConfig
-from .polarquant import PolarQuant
-from .qjl import QJL
-from .codebooks import get_lloyd_max_codebook, generate_codebook
-from .utils import quantize_decompress_benchmark, compute_mse, compute_distortion
+from .benchmarking import (
+    benchmark_array,
+    make_dataset,
+    parse_shape,
+    parse_shapes,
+    run_benchmark_suite,
+    write_benchmark_results,
+)
+from .codebooks import generate_codebook, get_lloyd_max_codebook
 from .model_export import (
+    TurboQuantGGUFLoader,
+    TurboQuantSafeTensorsLoader,
     export_to_gguf,
     export_to_safetensors,
     load_gguf,
-    load_safetensors,
     load_gguf_model,
-    load_safetensors_model,
     load_model,
+    load_safetensors,
+    load_safetensors_model,
     quantize_model_weights,
-    TurboQuantGGUFLoader,
-    TurboQuantSafeTensorsLoader,
 )
+from .polarquant import PolarQuant
+from .qjl import QJL
+from .turboquant import TurboQuant, TurboQuantConfig
+from .utils import compute_distortion, compute_mse, quantize_decompress_benchmark
 
 __all__ = [
     "TurboQuant",
@@ -53,6 +61,12 @@ __all__ = [
     "quantize_decompress_benchmark",
     "compute_mse",
     "compute_distortion",
+    "benchmark_array",
+    "make_dataset",
+    "parse_shape",
+    "parse_shapes",
+    "run_benchmark_suite",
+    "write_benchmark_results",
     "export_to_gguf",
     "export_to_safetensors",
     "load_gguf",

@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fastvq"
-version = "0.1.2"
-description = "TurboQuant: Extreme compression for AI models with near-optimal distortion rates"
+version = "0.2.0"
+description = "FastVQ: fast vector quantization for AI model weights and KV caches"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "TurboQuant Contributors"}
+    {name = "FastVQ Contributors"}
 ]
 keywords = ["quantization", "compression", "llm", "kv-cache", "machine-learning", "ai"]
 classifiers = [
@@ -43,6 +43,16 @@ dev = [
     "mypy>=0.950",
     "ruff>=0.1.0",
 ]
+bench = [
+    "pandas>=1.5.0",
+    "matplotlib>=3.5.0",
+]
+notebooks = [
+    "jupyter>=1.0.0",
+    "ipykernel>=6.0.0",
+    "matplotlib>=3.5.0",
+    "pandas>=1.5.0",
+]
 torch = [
     "torch>=2.0.0",
 ]
@@ -50,9 +60,14 @@ all = [
     "torch>=2.0.0",
     "pytest>=7.0.0",
     "pytest-benchmark>=4.0.0",
+    "pandas>=1.5.0",
+    "matplotlib>=3.5.0",
+    "jupyter>=1.0.0",
+    "ipykernel>=6.0.0",
 ]
 
 [project.scripts]
+fastvq = "fastvq.cli:main"
 turboquant = "turboquant.cli:main"
 tq = "turboquant.cli:main"
 
@@ -65,7 +80,7 @@ Changelog = "https://github.com/Zapdev-labs/Turboquant/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["turboquant*"]
+include = ["turboquant*", "fastvq*"]
 
 [tool.black]
 line-length = 100
@@ -80,6 +95,8 @@ disallow_untyped_defs = true
 [tool.ruff]
 line-length = 100
 target-version = "py38"
+
+[tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
 
@@ -91,4 +108,4 @@ python_functions = ["test_*"]
 
 [tool.setuptools_scm]
 write_to = "turboquant/_version.py"
-fallback_version = "0.1.1"
+fallback_version = "0.2.0"

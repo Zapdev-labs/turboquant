@@ -1,8 +1,8 @@
 """Cross-platform clipboard utilities for error reporting."""
 
 import os
-import sys
 import subprocess
+import sys
 from typing import Optional
 
 

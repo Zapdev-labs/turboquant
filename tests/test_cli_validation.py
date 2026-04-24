@@ -1,7 +1,6 @@
 """Tests for CLI model validation functions."""
 
-import pytest
-from turboquant.cli import _validate_hf_model, _format_suggestions
+from turboquant.cli import _format_suggestions, _validate_hf_model
 
 
 class TestValidateHFModel:
@@ -64,5 +63,6 @@ class TestIntegration:
             is_valid, error_msg = _validate_hf_model(model)
             assert is_valid is False
             suggestions = _format_suggestions(model)
-            assert expected_pattern.lower() in suggestions.lower(), \
-                f"Expected '{expected_pattern}' in suggestions for {model}"
+            assert (
+                expected_pattern.lower() in suggestions.lower()
+            ), f"Expected '{expected_pattern}' in suggestions for {model}"

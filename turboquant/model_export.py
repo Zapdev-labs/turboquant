@@ -13,8 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 
 from .turboquant import TurboQuant, TurboQuantConfig
-from .utils import pack_bits, compute_distortion, unpack_bits
-
+from .utils import compute_distortion, pack_bits, unpack_bits
 
 # GGUF magic number and version
 GGUF_MAGIC = b"GGUF"
@@ -224,10 +223,7 @@ class TurboQuantGGUFWriter:
             bit_width = 3  # Default
             if "bit_width" in quantized:
                 bw = quantized["bit_width"]
-                if isinstance(bw, np.ndarray):
-                    bit_width = int(bw.item())
-                else:
-                    bit_width = int(bw)
+                bit_width = int(bw.item()) if isinstance(bw, np.ndarray) else int(bw)
             n_values = quantized["polar_indices"].size
             size += (n_values * bit_width + 7) // 8
         # Radii (float32)
@@ -688,7 +684,7 @@ def load_gguf(path: Union[str, Path]) -> Dict[str, Any]:
         # Read header
         magic = f.read(4)
         if magic != GGUF_MAGIC:
-            raise ValueError(f"Invalid GGUF file: wrong magic number")
+            raise ValueError("Invalid GGUF file: wrong magic number")
 
         version = struct.unpack("<I", f.read(4))[0]
         n_tensors = struct.unpack("<Q", f.read(8))[0]
@@ -1005,7 +1001,7 @@ class TurboQuantGGUFLoader:
             try:
                 result[info["name"]] = self.load_tensor(info["name"])
             except ValueError as e:
-                warnings.warn(f"Could not load tensor '{info['name']}': {e}")
+                warnings.warn(f"Could not load tensor '{info['name']}': {e}", stacklevel=2)
         return result
 
 
@@ -1190,11 +1186,11 @@ class TurboQuantSafeTensorsLoader:
             Dictionary mapping tensor names to dequantized numpy arrays
         """
         result = {}
-        for name in self.tensor_infos.keys():
+        for name in self.tensor_infos:
             try:
                 result[name] = self.load_tensor(name)
             except ValueError as e:
-                warnings.warn(f"Could not load tensor '{name}': {e}")
+                warnings.warn(f"Could not load tensor '{name}': {e}", stacklevel=2)
         return result
 
 

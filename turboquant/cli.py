@@ -1,16 +1,16 @@
 import argparse
+import json
 import os
 import sys
-import json
-import numpy as np
 from pathlib import Path
-from typing import Optional, List
 
-from .turboquant import TurboQuant, TurboQuantConfig
-from .kv_cache import KVCacheCompressor, benchmark_kv_cache
-from .utils import compute_distortion
-from .model_export import load_gguf, load_safetensors
+import numpy as np
+
 from .clipboard import copy_error_to_clipboard, reset_terminal_state
+from .kv_cache import KVCacheCompressor
+from .model_export import load_gguf, load_safetensors
+from .turboquant import TurboQuant, TurboQuantConfig
+from .utils import compute_distortion
 
 
 def handle_error(error: Exception, command: str) -> int:
@@ -26,25 +26,25 @@ def handle_error(error: Exception, command: str) -> int:
 def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser for the CLI."""
     parser = argparse.ArgumentParser(
-        prog="turboquant",
-        description="TurboQuant: Extreme compression for AI models",
+        prog="fastvq",
+        description="FastVQ: fast vector quantization for AI model weights and KV caches",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   # Compress a numpy array
-  turboquant compress input.npy output.tq --bits 3
-  
+  fastvq compress input.npy output.tq --bits 3
+
   # Decompress
-  turboquant decompress output.tq reconstructed.npy
-  
+  fastvq decompress output.tq reconstructed.npy
+
   # Benchmark different bit-widths
-  turboquant benchmark input.npy --bits 3,4
-  
+  fastvq benchmark input.npy --bits 3,4
+
   # Analyze KV cache memory usage
-  turboquant kv-analyze --model-size 70b --seq-len 100000
-  
+  fastvq kv-analyze --model-size 70b --seq-len 100000
+
   # Info about a compressed file
-  turboquant info compressed.tq
+  fastvq info compressed.tq
         """,
     )
 
@@ -66,7 +66,7 @@ Examples:
         "--block-size",
         type=int,
         default=128,
-        choices=[32, 64, 128],
+        choices=[32, 64, 128, 256],
         help="Block size for quantization (default: 128)",
     )
     compress_parser.add_argument(
@@ -74,6 +74,20 @@ Examples:
     )
     compress_parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)"
+    )
+    compress_parser.add_argument(
+        "--rotation",
+        type=str,
+        default="hadamard",
+        choices=["hadamard", "random"],
+        help="Rotation backend (default: hadamard)",
+    )
+    compress_parser.add_argument(
+        "--radii-dtype",
+        type=str,
+        default="float16",
+        choices=["float16", "float32"],
+        help="Storage dtype for polar radii (default: float16)",
     )
 
     # Decompress command
@@ -96,7 +110,64 @@ Examples:
     benchmark_parser.add_argument(
         "--trials", type=int, default=10, help="Number of benchmark trials (default: 10)"
     )
+    benchmark_parser.add_argument(
+        "--block-size",
+        type=int,
+        default=128,
+        choices=[32, 64, 128, 256],
+        help="Block size for quantization (default: 128)",
+    )
+    benchmark_parser.add_argument(
+        "--rotation",
+        type=str,
+        default="hadamard",
+        choices=["hadamard", "random"],
+        help="Rotation backend (default: hadamard)",
+    )
     benchmark_parser.add_argument("--output", "-o", type=str, help="Save results to JSON file")
+
+    # Synthetic benchmark suite command
+    suite_parser = subparsers.add_parser("benchmark-suite", help="Run a synthetic benchmark grid")
+    suite_parser.add_argument(
+        "--shapes",
+        type=str,
+        default="1024x128,4096x128,1024x192",
+        help="Comma-separated shapes; use semicolons for comma-style shapes",
+    )
+    suite_parser.add_argument(
+        "--bits",
+        "-b",
+        type=str,
+        default="2,3,4",
+        help="Comma-separated bit-widths to test (default: 2,3,4)",
+    )
+    suite_parser.add_argument(
+        "--block-sizes",
+        type=str,
+        default="128",
+        help="Comma-separated block sizes to test (default: 128)",
+    )
+    suite_parser.add_argument(
+        "--trials",
+        type=int,
+        default=5,
+        help="Number of timing trials per case (default: 5)",
+    )
+    suite_parser.add_argument(
+        "--distribution",
+        type=str,
+        default="normal",
+        choices=["normal", "uniform", "student"],
+        help="Synthetic data distribution (default: normal)",
+    )
+    suite_parser.add_argument(
+        "--rotation",
+        type=str,
+        default="hadamard",
+        choices=["hadamard", "random"],
+        help="Rotation backend (default: hadamard)",
+    )
+    suite_parser.add_argument("--output", "-o", type=str, help="Save results to JSON or CSV")
 
     # KV Cache analysis command
     kv_parser = subparsers.add_parser("kv-analyze", help="Analyze KV cache compression for LLMs")
@@ -132,8 +203,10 @@ Examples:
         help="Model ID (e.g., meta-llama/Llama-2-7b-hf, TheBloke/Llama-2-7B-GPTQ)",
     )
     download_parser.add_argument(
-        "--output", "-o", type=str,
-        help="Output directory (default: ./models, or set TURBOQUANT_MODELS_DIR env var)"
+        "--output",
+        "-o",
+        type=str,
+        help="Output directory (default: ./models, or set TURBOQUANT_MODELS_DIR env var)",
     )
     download_parser.add_argument(
         "--bits",
@@ -293,6 +366,8 @@ def cmd_compress(args: argparse.Namespace) -> int:
             use_qjl=not args.no_qjl,
             use_polar=True,
             rotation_seed=args.seed,
+            rotation=args.rotation,
+            radii_dtype=args.radii_dtype,
         )
 
         print(f"\nCompressing with {args.bits}-bit TurboQuant...")
@@ -304,31 +379,24 @@ def cmd_compress(args: argparse.Namespace) -> int:
         # Calculate metrics
         metrics = compute_distortion(data, reconstructed)
 
-        print(f"\nCompression Results:")
+        print("\nCompression Results:")
         print(f"  MSE: {metrics['mse']:.6f}")
         print(f"  SNR: {metrics['snr_db']:.2f} dB")
         print(f"  Cosine similarity: {metrics['cosine_similarity']:.6f}")
 
         # Save compressed representation
         output_path = Path(args.output)
-        np.savez_compressed(
-            args.output,
-            norms=quantized["norms"],
-            polar_indices=quantized["polar_indices"],
-            polar_radii=quantized["polar_radii"],
-            original_shape=np.array(quantized["original_shape"]),
-            bit_width=np.array([config.bit_width]),
-            block_size=np.array([config.block_size]),
-            use_qjl=np.array([config.use_qjl]),
-        )
+        output_path.write_bytes(tq._pack_quantized(quantized))
 
         # Calculate actual compression ratio
         compressed_size = Path(args.output).stat().st_size
         compression_ratio = data.nbytes / compressed_size
+        estimated = tq.compression_stats(quantized)
 
         print(f"\nOutput: {args.output}")
         print(f"  Compressed size: {compressed_size / 1024 / 1024:.2f} MB")
         print(f"  Compression ratio: {compression_ratio:.2f}x")
+        print(f"  Estimated packed ratio: {estimated['compression_ratio']:.2f}x")
 
         return 0
 
@@ -346,29 +414,8 @@ def cmd_decompress(args: argparse.Namespace) -> int:
 
         print(f"Loading compressed file {args.input}...")
 
-        # Load compressed data
-        loaded = np.load(args.input)
-
-        # Reconstruct quantized dict
-        quantized = {
-            "norms": loaded["norms"],
-            "polar_indices": loaded["polar_indices"],
-            "polar_radii": loaded["polar_radii"],
-            "original_shape": tuple(loaded["original_shape"]),
-            "config": TurboQuantConfig(
-                bit_width=int(loaded["bit_width"][0]),
-                block_size=int(loaded["block_size"][0]),
-                use_qjl=bool(loaded["use_qjl"][0]),
-            ),
-            "polar_metadata": {},
-        }
-
-        # Decompress
-        config = quantized["config"]
-        tq = TurboQuant(config)
-
         print("Decompressing...")
-        reconstructed = tq.dequantize(quantized)
+        reconstructed = TurboQuant().decompress(input_path.read_bytes())
 
         # Save output
         np.save(args.output, reconstructed)
@@ -403,11 +450,18 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         # Run benchmarks
         results = []
 
-        print(f"{'Bit-width':<12} {'Compress':<12} {'Decompress':<14} {'MSE':<12} {'SNR':<10}")
-        print("-" * 70)
+        print(
+            f"{'Bit-width':<12} {'Compress':<12} {'Decompress':<14} "
+            f"{'Ratio':<10} {'MSE':<12} {'SNR':<10}"
+        )
+        print("-" * 82)
 
         for bw in bit_widths:
-            config = TurboQuantConfig(bit_width=bw, block_size=128)
+            config = TurboQuantConfig(
+                bit_width=bw,
+                block_size=args.block_size,
+                rotation=args.rotation,
+            )
             tq = TurboQuant(config)
 
             import time
@@ -430,11 +484,14 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 
             # Metrics
             metrics = compute_distortion(data, reconstructed)
+            stats = tq.compression_stats(quantized)
 
             result = {
                 "bit_width": bw,
                 "compress_time_ms": compress_time * 1000,
                 "decompress_time_ms": decompress_time * 1000,
+                "compression_ratio": stats["compression_ratio"],
+                "compressed_bytes": stats["compressed_bytes"],
                 **metrics,
             }
             results.append(result)
@@ -443,6 +500,7 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
                 f"{bw}-bit        "
                 f"{compress_time * 1000:>8.2f} ms   "
                 f"{decompress_time * 1000:>8.2f} ms     "
+                f"{stats['compression_ratio']:>6.2f}x   "
                 f"{metrics['mse']:>8.6f}   "
                 f"{metrics['snr_db']:>6.2f} dB"
             )
@@ -450,13 +508,73 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         # Save to JSON if requested
         if args.output:
             with open(args.output, "w") as f:
-                json.dump(results, f, indent=2)
+                json.dump(
+                    results,
+                    f,
+                    indent=2,
+                    default=lambda value: value.item() if hasattr(value, "item") else str(value),
+                )
             print(f"\nResults saved to {args.output}")
 
         return 0
 
     except Exception as e:
         return handle_error(e, "benchmark")
+
+
+def cmd_benchmark_suite(args: argparse.Namespace) -> int:
+    """Handle the benchmark-suite command."""
+    try:
+        from .benchmarking import (
+            parse_shapes,
+            run_benchmark_suite,
+            write_benchmark_results,
+        )
+
+        shapes = parse_shapes(args.shapes)
+        bit_widths = [int(value.strip()) for value in args.bits.split(",") if value.strip()]
+        block_sizes = [int(value.strip()) for value in args.block_sizes.split(",") if value.strip()]
+
+        print("Running synthetic benchmark suite")
+        shape_list = ", ".join("x".join(str(dim) for dim in shape) for shape in shapes)
+        print(f"  Shapes: {shape_list}")
+        print(f"  Bits: {bit_widths}")
+        print(f"  Block sizes: {block_sizes}")
+        print(f"  Trials: {args.trials}")
+        print()
+
+        results = run_benchmark_suite(
+            shapes=shapes,
+            bit_widths=bit_widths,
+            block_sizes=block_sizes,
+            trials=args.trials,
+            distribution=args.distribution,
+            rotation=args.rotation,
+        )
+
+        print(
+            f"{'Shape':<16} {'Bits':<6} {'Block':<7} {'Q ms':<10} "
+            f"{'DQ ms':<10} {'Ratio':<8} {'Cosine':<8}"
+        )
+        print("-" * 78)
+        for result in results:
+            shape = "x".join(str(dim) for dim in result["shape"])
+            print(
+                f"{shape:<16} {result['bit_width']:<6} {result['block_size']:<7} "
+                f"{result['quantize_time_ms']:<10.2f} "
+                f"{result['dequantize_time_ms']:<10.2f} "
+                f"{result['compression_ratio']:<8.2f} "
+                f"{result['cosine_similarity']:<8.4f}"
+            )
+
+        if args.output:
+            write_benchmark_results(results, args.output)
+            print(f"\nResults saved to {args.output}")
+
+        return 0
+
+    except Exception as e:
+        return handle_error(e, "benchmark-suite")
 
 
 def cmd_kv_analyze(args: argparse.Namespace) -> int:
@@ -473,15 +591,15 @@ def cmd_kv_analyze(args: argparse.Namespace) -> int:
 
         config = model_configs[args.model_size]
 
-        print(f"=" * 60)
+        print("=" * 60)
         print(f"KV Cache Analysis for {args.model_size.upper()} Model")
-        print(f"=" * 60)
-        print(f"\nModel Configuration:")
+        print("=" * 60)
+        print("\nModel Configuration:")
         print(f"  Layers: {config['layers']}")
         print(f"  Attention heads: {config['n_heads']}")
         print(f"  Head dimension: {config['head_dim']}")
 
-        print(f"\nInference Configuration:")
+        print("\nInference Configuration:")
         print(f"  Sequence length: {args.seq_len:,} tokens")
         print(f"  Batch size: {args.batch_size}")
         print(f"  Available VRAM: {args.vram:.1f} GB")
@@ -504,7 +622,7 @@ def cmd_kv_analyze(args: argparse.Namespace) -> int:
         fp16_full = fp16_per_layer * config["layers"]
         tq_full = tq_per_layer * config["layers"]
 
-        print(f"\nMemory Usage (per layer):")
+        print("\nMemory Usage (per layer):")
         print(f"  FP16 KV cache:     {fp16_per_layer:.3f} GB")
         print(f"  TurboQuant {args.bits}-bit:  {tq_per_layer:.3f} GB")
         print(f"  Compression ratio: {stats['compression_ratio']:.2f}x")
@@ -513,7 +631,7 @@ def cmd_kv_analyze(args: argparse.Namespace) -> int:
         print(f"  FP16 KV cache:     {fp16_full:.2f} GB")
         print(f"  TurboQuant {args.bits}-bit:  {tq_full:.2f} GB")
 
-        print(f"\nContext Window Analysis:")
+        print("\nContext Window Analysis:")
         print(f"  Max context (FP16):  {stats['max_context_fp16']:,} tokens")
         print(f"  Max context (TQ):    {stats['max_context_tq']:,} tokens")
         print(f"  Improvement:         {stats['max_context_tq'] / stats['max_context_fp16']:.1f}x")
@@ -541,12 +659,17 @@ def cmd_info(args: argparse.Namespace) -> int:
 
         print(f"File: {args.file}")
         print(f"Size: {input_path.stat().st_size / 1024:.2f} KB")
-        print(f"\nCompression Parameters:")
+        print("\nCompression Parameters:")
         print(f"  Bit-width: {loaded['bit_width'][0]}")
         print(f"  Block size: {loaded['block_size'][0]}")
         print(f"  QJL enabled: {bool(loaded['use_qjl'][0])}")
+        if "rotation_code" in loaded.files:
+            rotation = "random" if int(loaded["rotation_code"][0]) == 1 else "hadamard"
+            radii_dtype = "float32" if int(loaded["radii_dtype_code"][0]) == 1 else "float16"
+            print(f"  Rotation: {rotation}")
+            print(f"  Radii dtype: {radii_dtype}")
         print(f"\nOriginal Shape: {tuple(loaded['original_shape'])}")
-        print(f"\nData Arrays:")
+        print("\nData Arrays:")
         for key in loaded.files:
             arr = loaded[key]
             print(f"  {key}: shape={arr.shape}, dtype={arr.dtype}")
@@ -580,28 +703,18 @@ def cmd_quick(args: argparse.Namespace) -> int:
         metrics = compute_distortion(data, reconstructed)
 
         # Determine output filename
-        if args.output:
-            output_path = args.output
-        else:
-            output_path = str(input_path.with_suffix(".tq.npz"))
+        output_path = args.output or str(input_path.with_suffix(".tq.npz"))
 
         # Save
-        np.savez_compressed(
-            output_path,
-            norms=quantized["norms"],
-            polar_indices=quantized["polar_indices"],
-            polar_radii=quantized["polar_radii"],
-            original_shape=np.array(quantized["original_shape"]),
-            bit_width=np.array([3]),
-            block_size=np.array([128]),
-            use_qjl=np.array([True]),
-        )
+        Path(output_path).write_bytes(tq._pack_quantized(quantized))
 
         compressed_size = Path(output_path).stat().st_size
         ratio = data.nbytes / compressed_size
+        estimated = tq.compression_stats(quantized)
 
         print(f"\nOutput: {output_path}")
         print(f"  Compressed: {compressed_size / 1024 / 1024:.2f} MB ({ratio:.1f}x)")
+        print(f"  Estimated packed ratio: {estimated['compression_ratio']:.1f}x")
         print(f"  MSE: {metrics['mse']:.6f}")
         print(f"  Cosine similarity: {metrics['cosine_similarity']:.4f}")
 
@@ -653,7 +766,7 @@ def cmd_load(args: argparse.Namespace) -> int:
             "turboquant.bit_width", metadata.get("quantization_config", {}).get("bits", "Unknown")
         )
 
-        print(f"Model Information:")
+        print("Model Information:")
         print(f"  Name: {model_name}")
         print(f"  Architecture: {architecture}")
         print(f"  File format: {file_format.upper()}")
@@ -667,16 +780,13 @@ def cmd_load(args: argparse.Namespace) -> int:
             print(f"Quantization: {quantization_method}")
 
         # Count tensors and calculate sizes
-        if isinstance(tensors, list):
-            num_tensors = len(tensors)
-        else:
-            num_tensors = len(tensors)
+        num_tensors = len(tensors)
 
         print(f"  Number of tensors: {num_tensors}")
 
         # Show per-tensor information
         if num_tensors > 0:
-            print(f"\nTensor Information:")
+            print("\nTensor Information:")
             print(f"{'Name':<50} {'Shape':<30} {'Type':<15}")
             print("-" * 95)
 
@@ -715,14 +825,14 @@ def cmd_load(args: argparse.Namespace) -> int:
                 estimated_fp16_size = total_elements * 2 / 1024 / 1024  # MB
                 actual_size = model_path.stat().st_size / 1024 / 1024  # MB
                 compression_ratio = estimated_fp16_size / actual_size if actual_size > 0 else 0
-                print(f"\nSize Analysis:")
+                print("\nSize Analysis:")
                 print(f"  Estimated FP16 size: {estimated_fp16_size:.2f} MB")
                 print(f"  Actual file size: {actual_size:.2f} MB")
                 print(f"  Compression ratio: {compression_ratio:.2f}x")
 
         # Show additional metadata
         if metadata:
-            print(f"\nAdditional Metadata:")
+            print("\nAdditional Metadata:")
             for key, value in list(metadata.items())[:10]:
                 if key not in ["general.name", "general.architecture", "turboquant.bit_width"]:
                     print(f"  {key}: {value}")
@@ -761,15 +871,15 @@ def cmd_load(args: argparse.Namespace) -> int:
 
                 shutil.copy2(model_path, output_path)
                 print(f"\n✓ Model saved to: {output_path}")
-                print(f"  Note: Full re-quantization requires tensor data processing")
+                print("  Note: Full re-quantization requires tensor data processing")
             else:
                 import shutil
 
                 shutil.copy2(model_path, output_path)
                 print(f"\n✓ Model saved to: {output_path}")
-                print(f"  Note: Full re-quantization requires tensor data processing")
+                print("  Note: Full re-quantization requires tensor data processing")
 
-            print(f"\nRe-quantization complete!")
+            print("\nRe-quantization complete!")
             print(f"  Original bits: {quantization_method}")
             print(f"  New bits: {output_bits}")
             print(f"  Format: {output_format.upper()}")
@@ -908,8 +1018,7 @@ def cmd_download(args: argparse.Namespace) -> int:
 
         # Check if transformers is available
         try:
-            from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
-            from huggingface_hub import HfApi
+            from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
         except ImportError:
             print("Error: transformers library not found")
             print("Install with: pip install transformers torch")
@@ -919,19 +1028,19 @@ def cmd_download(args: argparse.Namespace) -> int:
         is_valid, error_msg = _validate_hf_model(args.model, args.hf_token)
         if not is_valid:
             print(f"\n❌ {error_msg}")
-            print(f"\n💡 Suggestions:")
+            print("\n💡 Suggestions:")
             print(_format_suggestions(args.model))
-            print(f"\nTo list available models:")
-            print(f"  turboquant list-models")
+            print("\nTo list available models:")
+            print("  turboquant list-models")
             return 1
 
         # Check if this is a GGUF-only repo
         is_gguf_only, repo_files = _check_gguf_only_repo(args.model, args.hf_token)
         if is_gguf_only:
             print(f"\n❌ Model '{args.model}' is a pre-quantized GGUF model repository.")
-            print(f"\n💡 This model cannot be downloaded with the 'download' command.")
-            print(f"   The download command only works with full transformers models.")
-            print(f"\n📋 Available GGUF files in this repo:")
+            print("\n💡 This model cannot be downloaded with the 'download' command.")
+            print("   The download command only works with full transformers models.")
+            print("\n📋 Available GGUF files in this repo:")
             gguf_files = [f for f in repo_files if f.endswith(".gguf")]
             displayed_files = gguf_files[:10]
             remaining_count = len(gguf_files) - 10
@@ -939,26 +1048,26 @@ def cmd_download(args: argparse.Namespace) -> int:
                 print(f"   • {f}")
             if remaining_count > 0:
                 print(f"   ... and {remaining_count} more")
-            print(f"\n✅ To use this model:")
-            print(f"   1. Download directly from HuggingFace:")
+            print("\n✅ To use this model:")
+            print("   1. Download directly from HuggingFace:")
             print(f"      huggingface-cli download {args.model}")
-            print(f"   2. Or use with llama.cpp directly:")
+            print("   2. Or use with llama.cpp directly:")
             print(f"      llama-cli --hf-repo {args.model} --hf-file <filename.gguf>")
-            print(f"   3. Or download and use the 'load' command:")
-            print(f"      turboquant load /path/to/downloaded/model.gguf --info")
+            print("   3. Or download and use the 'load' command:")
+            print("      turboquant load /path/to/downloaded/model.gguf --info")
             return 1
 
         # Support environment variable override for download directory
         default_output = os.environ.get("TURBOQUANT_MODELS_DIR", "./models")
         output_dir = Path(args.output or default_output) / args.model.replace("/", "--")
 
-        CONSERVATIVE_SIZE_ESTIMATE_GB = 5.0
-        has_space, available_gb = _check_disk_space(output_dir, CONSERVATIVE_SIZE_ESTIMATE_GB)
+        conservative_size_estimate_gb = 5.0
+        has_space, available_gb = _check_disk_space(output_dir, conservative_size_estimate_gb)
         if not has_space:
-            print(f"\n❌ Insufficient disk space!")
+            print("\n❌ Insufficient disk space!")
             print(f"   Available: {available_gb:.2f} GB")
-            print(f"   Estimated required: ~{CONSERVATIVE_SIZE_ESTIMATE_GB:.2f} GB")
-            print(f"\n💡 Free up some disk space or specify a different output directory:")
+            print(f"   Estimated required: ~{conservative_size_estimate_gb:.2f} GB")
+            print("\n💡 Free up some disk space or specify a different output directory:")
             print(f"   turboquant download {args.model} --output /path/with/more/space")
             return 1
 
@@ -1005,7 +1114,7 @@ def cmd_download(args: argparse.Namespace) -> int:
 
         except AttributeError as e:
             if "vocab_size" in str(e):
-                print(f"\n✗ Error: Model config missing 'vocab_size' attribute")
+                print("\n✗ Error: Model config missing 'vocab_size' attribute")
                 print("   This is a known compatibility issue with newer model architectures.")
                 print("\n💡 Try updating transformers:")
                 print("   pip install -U transformers>=4.50.0")
@@ -1066,8 +1175,8 @@ def cmd_download(args: argparse.Namespace) -> int:
                     model_metadata=model_metadata,
                 )
 
-            print(f"✓ Model exported successfully\n")
-            print(f"Export statistics:")
+            print("✓ Model exported successfully\n")
+            print("Export statistics:")
             print(f"  File size: {result['file_size_bytes'] / 1024 / 1024:.2f} MB")
             print(f"  Compression ratio: {result['compression_ratio']:.2f}x")
             print(f"  Average MSE: {result['avg_mse']:.6f}")
@@ -1086,11 +1195,10 @@ def cmd_download(args: argparse.Namespace) -> int:
             }
 
             config.save_pretrained(output_dir)
-            print(f"✓ Model configuration saved with TurboQuant metadata\n")
+            print("✓ Model configuration saved with TurboQuant metadata\n")
 
             # Also set up KV cache compression
             print("Setting up KV cache compression...")
-            compressor = KVCacheCompressor(bit_width=args.bits, block_size=128)
             print(f"✓ KV cache TurboQuant {args.bits}-bit ready\n")
 
             # Save quantization info
@@ -1121,14 +1229,14 @@ def cmd_download(args: argparse.Namespace) -> int:
             print("=" * 60)
             print(f"\nModel location: {output_dir}")
             print(f"Exported file: {output_file}")
-            print(f"\nTo use this model:")
+            print("\nTo use this model:")
             if args.format == "gguf":
-                print(f"  # Use with llama.cpp or compatible tools")
+                print("  # Use with llama.cpp or compatible tools")
                 print(f'  ./main -m {output_file} -p "Your prompt here"')
             else:
-                print(f"  from transformers import AutoModelForCausalLM, AutoTokenizer")
+                print("  from transformers import AutoModelForCausalLM, AutoTokenizer")
                 print(f"  tokenizer = AutoTokenizer.from_pretrained('{output_dir}')")
-                print(f"  # Note: You need a TurboQuant-compatible loader for SafeTensors")
+                print("  # Note: You need a TurboQuant-compatible loader for SafeTensors")
             print(f"\nKV cache will be automatically compressed with TurboQuant {args.bits}-bit")
             print(f"Expected memory savings: {result['compression_ratio']:.1f}x")
 
@@ -1249,6 +1357,7 @@ def main():
         "compress": cmd_compress,
         "decompress": cmd_decompress,
         "benchmark": cmd_benchmark,
+        "benchmark-suite": cmd_benchmark_suite,
         "kv-analyze": cmd_kv_analyze,
         "info": cmd_info,
         "quick": cmd_quick,

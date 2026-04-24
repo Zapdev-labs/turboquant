@@ -2,20 +2,22 @@
 
 **Generated:** 2026-03-31
 **Updated:** 2026-03-31
-**Project:** TurboQuant Clone
-**Type:** Multi-language monorepo (Python + Node.js)
+**Project:** FastVQ
+**Type:** Python package
 
 ## OVERVIEW
 
-TurboQuant is a production-quality implementation of Google's quantization algorithm for extreme AI model compression (3-bit with near-zero loss). This monorepo contains:
+FastVQ is a Python implementation of TurboQuant-style vector quantization for AI model compression. This repository contains:
 - **Core Python library** (`turboquant/`) - PolarQuant, QJL, and TurboQuant algorithms
-- **NPM CLI wrapper** (`npm-package/`) - Global CLI wrapper with interactive TUI
+- **FastVQ alias package** (`fastvq/`) - PyPI import and CLI entrypoint aliases
+- **Benchmarks** (`benchmarks/`) - Synthetic benchmark runner
+- **Notebooks** (`notebooks/`) - Notebook examples
 - **Test suite** (`tests/`) - Minimal pytest validation
 
 ## STRUCTURE
 
 ```
-turboquant-clone/
+fastvq/
 ├── turboquant/              # Python library source (12 modules)
 │   ├── __init__.py         # Public API exports
 │   ├── turboquant.py       # Main algorithm
@@ -25,13 +27,12 @@ turboquant-clone/
 │   ├── model_export.py     # GGUF/SafeTensors export
 │   ├── cli.py              # CLI entry point
 │   └── utils.py            # Utilities
-├── npm-package/             # NPM CLI wrapper with TUI
-│   ├── bin/                # CLI binaries (turboquant, tq)
-│   ├── src/tui.tsx         # Interactive Terminal UI (React)
-│   └── package.json        # NPM manifest
+├── fastvq/                  # PyPI import/CLI alias package
+├── benchmarks/              # Benchmark scripts
+├── notebooks/               # Notebook examples
 ├── tests/                   # Test suite (minimal)
 ├── models/                  # Downloaded model artifacts
-└── .github/workflows/       # CI/CD (NPM publish only)
+└── .github/workflows/       # CI/CD
 ```
 
 ## WHERE TO LOOK
@@ -44,8 +45,9 @@ turboquant-clone/
 | KV cache | `turboquant/kv_cache.py` | Transformer cache compression |
 | Model export | `turboquant/model_export.py` | GGUF/SafeTensors support |
 | CLI commands | `turboquant/cli.py` | argparse subcommands |
-| TUI interface | `npm-package/src/tui.tsx` | React-based terminal UI |
-| NPM wrapper | `npm-package/bin/turboquant` | Node-to-Python delegation |
+| PyPI alias | `fastvq/` | `fastvq` import and CLI alias |
+| Benchmarks | `benchmarks/`, `turboquant/benchmarking.py` | Synthetic benchmark suite |
+| Notebooks | `notebooks/` | Notebook walkthroughs |
 
 ## CONVENTIONS
 
@@ -55,30 +57,16 @@ turboquant-clone/
 - **Naming:** PascalCase classes, snake_case functions
 - **Imports:** Relative for internal (`from .module import`), absolute for third-party
 
-### JavaScript/TypeScript (Global)
-- **Path alias:** `@/*` maps to `./*`
-- **Components:** PascalCase in PascalCase folders
-- **TUI:** Bun runtime required for interactive mode
-
 ## ANTI-PATTERNS (THIS PROJECT)
 
 - **DO NOT** use `compress()`/`decompress()` - use `quantize()`/`dequantize()` instead
-- **DO NOT** create `tailwind.config.js` - Tailwind v4 uses CSS-based config
-- **NEVER** mix Python and JS dependencies at root level
-- **AVOID** adding dependencies to root - keep in respective subprojects
+- **AVOID** adding heavy runtime dependencies; put benchmark/notebook-only deps in extras
 
 ## UNIQUE STYLES
 
-### NPM Wrapper Pattern
-- Thin Node.js wrapper that auto-installs Python via pip
-- Handles Python detection (`python3`, `python`, `py`)
-- Delegates all commands to Python CLI
-- **TUI Mode:** Requires Bun runtime; falls back to CLI without it
-
-### Bun-First TUI
-- Interactive UI built with React + @opentui/core
-- Bun-specific dependencies (@opentui/react)
-- Falls back to plain CLI if Bun unavailable
+### Package Name
+- PyPI distribution and preferred import: `fastvq`
+- Legacy implementation package and CLI alias remain: `turboquant`, `tq`
 
 ## COMMANDS
 
@@ -98,34 +86,13 @@ mypy turboquant/                    # Type check
 pytest                              # Run tests (tests/ minimal)
 
 # CLI
+fastvq --help                      # Preferred command
 turboquant --help                   # Full command
 tq --help                           # Short alias
-```
-
-### NPM Package Development
-```bash
-cd npm-package
-
-# Install
-npm install                         # Runs install.js postinstall
-
-# Development
-bun src/tui.tsx                     # Run TUI directly
-npm run tui                         # Same as above
-
-# Building
-npm run build                       # Compile TypeScript
-npm run test                        # Run validation tests
-
-# Usage
-tq                                  # Launch TUI (requires Bun)
-turboquant --help                   # CLI mode
 ```
 
 ## NOTES
 
 - **Missing tests/:** `pyproject.toml` references `tests/` but only has 1 test file
-- **No root lockfile:** Each JS subproject manages deps independently
 - **Python 3.8+ required:** Minimum version specified in `pyproject.toml`
-- **Bun for TUI:** Interactive mode requires Bun; CLI works with Node
-- **CI/CD:** Only NPM publishing workflow exists (no Python CI)
+- **CI/CD:** Python publishing workflow exists

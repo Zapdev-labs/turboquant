@@ -8,10 +8,11 @@ Provides hardware-accelerated implementations using:
 Falls back to NumPy implementations when SIMD is unavailable.
 """
 
-import numpy as np
-from typing import Optional, Callable, Dict, List, Union, Tuple
 import os
 import sys
+from typing import Dict, Tuple
+
+import numpy as np
 
 # Detect CPU capabilities
 _HAS_AVX2 = False
@@ -26,13 +27,11 @@ try:
         """Check if CPU supports a specific feature."""
         try:
             if sys.platform == "linux":
-                with open("/proc/cpuinfo", "r") as f:
+                with open("/proc/cpuinfo") as f:
                     cpuinfo = f.read()
                     return feature in cpuinfo
             elif sys.platform == "darwin":
-                result = subprocess.run(
-                    ["sysctl", "-a"], capture_output=True, text=True, timeout=1
-                )
+                result = subprocess.run(["sysctl", "-a"], capture_output=True, text=True, timeout=1)
                 return feature.lower() in result.stdout.lower()
             elif sys.platform == "win32":
                 return False  # Windows detection requires different approach
@@ -176,9 +175,7 @@ def random_rotation(x: np.ndarray, rotation_matrix: np.ndarray) -> np.ndarray:
     return _random_rotation_simd(x, rotation_matrix)
 
 
-def _quantize_batch_simd(
-    x: np.ndarray, codebook: np.ndarray, bit_width: int
-) -> np.ndarray:
+def _quantize_batch_simd(x: np.ndarray, codebook: np.ndarray, bit_width: int) -> np.ndarray:
     """SIMD-optimized batch quantization using codebook.
 
     Args:
@@ -207,9 +204,7 @@ def _quantize_batch_simd(
     return indices.astype(np.int32)
 
 
-def quantize_batch(
-    x: np.ndarray, codebook: np.ndarray, bit_width: int
-) -> np.ndarray:
+def quantize_batch(x: np.ndarray, codebook: np.ndarray, bit_width: int) -> np.ndarray:
     """Batch quantization with SIMD acceleration.
 
     Args:
@@ -465,9 +460,7 @@ class SIMDQuantizer:
         """
         return polar_transform(x)
 
-    def inverse_polar_transform(
-        self, radii: np.ndarray, angles: np.ndarray
-    ) -> np.ndarray:
+    def inverse_polar_transform(self, radii: np.ndarray, angles: np.ndarray) -> np.ndarray:
         """Apply inverse polar transformation with SIMD acceleration.
 
         Args:

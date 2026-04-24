@@ -4,9 +4,10 @@ Provides GPU implementations of core TurboQuant operations using PyTorch CUDA.
 Falls back to CPU implementations when CUDA is unavailable.
 """
 
-import numpy as np
-from typing import Optional, Dict, Tuple, Union, Any
 import os
+from typing import Any, Dict, Optional, Tuple, Union
+
+import numpy as np
 
 # CUDA availability flag
 _CUDA_AVAILABLE = False
@@ -14,7 +15,6 @@ _TORCH_AVAILABLE = False
 
 try:
     import torch
-    import torch.nn.functional as F
 
     _TORCH_AVAILABLE = True
     _CUDA_AVAILABLE = torch.cuda.is_available()
@@ -115,9 +115,9 @@ class CUDAKernels:
         if dim not in self._rotation_cache:
             # Generate random orthogonal matrix using QR decomposition
             torch.manual_seed(seed)
-            A = torch.randn(dim, dim, device=self.device, dtype=torch.float32)
-            Q, _ = torch.linalg.qr(A)
-            self._rotation_cache[dim] = Q
+            gaussian = torch.randn(dim, dim, device=self.device, dtype=torch.float32)
+            rotation, _upper = torch.linalg.qr(gaussian)
+            self._rotation_cache[dim] = rotation
         return self._rotation_cache[dim]
 
     def _get_jl_matrix(self, in_dim: int, out_dim: int, seed: int) -> "torch.Tensor":
@@ -125,9 +125,9 @@ class CUDAKernels:
         key = (in_dim, out_dim, seed)
         if key not in self._jl_cache:
             torch.manual_seed(seed)
-            S = torch.randn(out_dim, in_dim, device=self.device, dtype=torch.float32)
-            S = S / np.sqrt(out_dim)  # Scale for JL lemma
-            self._jl_cache[key] = S
+            projection = torch.randn(out_dim, in_dim, device=self.device, dtype=torch.float32)
+            projection = projection / np.sqrt(out_dim)  # Scale for JL lemma
+            self._jl_cache[key] = projection
         return self._jl_cache[key]
 
     def walsh_hadamard(self, x: Union[np.ndarray, "torch.Tensor"]) -> "torch.Tensor":
@@ -437,12 +437,8 @@ class CUDAKVCacheCompressor:
         k_reshaped = key_states.reshape(-1, head_dim)
         v_reshaped = value_states.reshape(-1, head_dim)
 
-        k_comp = self.kernels.batch_quantize(
-            k_reshaped, self.block_size, self.bit_width
-        )
-        v_comp = self.kernels.batch_quantize(
-            v_reshaped, self.block_size, self.bit_width
-        )
+        k_comp = self.kernels.batch_quantize(k_reshaped, self.block_size, self.bit_width)
+        v_comp = self.kernels.batch_quantize(v_reshaped, self.block_size, self.bit_width)
 
         # Add shape info
         k_comp["shape"] = (batch, n_heads, seq_len, head_dim)

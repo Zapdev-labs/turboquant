@@ -4,12 +4,12 @@ Runs as a JSON-RPC server over stdin/stdout, similar to how Codex CLI works.
 Communicates with T3code server via stdio pipes.
 """
 
-import sys
 import json
+import sys
 import uuid
-from pathlib import Path
-from typing import Dict, List, Optional, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 
 class ChatServer:
@@ -104,7 +104,7 @@ class ChatServer:
 
         messages = params.get("messages", [])
         temperature = params.get("temperature", 0.7)
-        max_tokens = params.get("max_tokens", None)
+        max_tokens = params.get("max_tokens")
         stream = params.get("stream", False)
 
         try:
@@ -250,16 +250,18 @@ class ChatServer:
             "jsonrpc": "2.0",
             "id": req_id,
             "result": {
-                "data": [
-                    {
-                        "id": Path(self.model_path).stem,
-                        "object": "model",
-                        "owned_by": "local",
-                        "ready": self.llm is not None,
-                    }
-                ]
-                if self.llm
-                else []
+                "data": (
+                    [
+                        {
+                            "id": Path(self.model_path).stem,
+                            "object": "model",
+                            "owned_by": "local",
+                            "ready": self.llm is not None,
+                        }
+                    ]
+                    if self.llm
+                    else []
+                )
             },
         }
 

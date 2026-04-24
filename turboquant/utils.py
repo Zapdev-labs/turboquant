@@ -1,6 +1,4 @@
 import numpy as np
-import struct
-from typing import Tuple
 
 
 def pack_bits(indices: np.ndarray, bits_per_value: int) -> bytes:
@@ -25,7 +23,7 @@ def pack_bits(indices: np.ndarray, bits_per_value: int) -> bytes:
 
     # Pack values bit by bit
     bit_pos = 0
-    for i, val in enumerate(indices):
+    for val in indices:
         # Ensure value fits in bits_per_value
         val = int(val) & ((1 << bits_per_value) - 1)
 
@@ -151,9 +149,7 @@ def compute_distortion(original: np.ndarray, reconstructed: np.ndarray) -> dict:
     }
 
 
-def quantize_decompress_benchmark(
-    quantizer, x: np.ndarray, n_trials: int = 100
-) -> dict:
+def quantize_decompress_benchmark(quantizer, x: np.ndarray, n_trials: int = 100) -> dict:
     """Benchmark quantization and decompression performance.
 
     Args:
@@ -231,7 +227,4 @@ def validate_quantization(
         return False
 
     # Check relative error
-    if relative_mse > tolerance:
-        return False
-
-    return True
+    return not relative_mse > tolerance

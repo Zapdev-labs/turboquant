@@ -1,6 +1,6 @@
-# TurboQuant Clone
+# FastVQ
 
-A production-quality implementation of Google's **TurboQuant** algorithm for extreme compression of AI models.
+Fast vector quantization for AI model weights and KV caches, published on PyPI as `fastvq`.
 
 ## Overview
 
@@ -15,7 +15,9 @@ This implementation includes:
 - QJL: 1-bit Johnson-Lindenstrauss transform with asymmetric estimator
 - TurboQuant: Combined two-stage compression with error correction
 - Full KV cache integration for transformer models
-- Comprehensive benchmarking suite
+- Arbitrary trailing dimensions with automatic block padding
+- Fast sign-flipped Hadamard rotation backend
+- Benchmark helpers, CLI benchmark suite, and notebook examples
 
 ## Key Features
 
@@ -67,12 +69,10 @@ cd turboquant
 pip install -e .
 ```
 
-**Note:** The package is published as `fastvq` on PyPI, but imports as `turboquant`:
+The package supports both the new `fastvq` import and the legacy `turboquant` import:
 
 ```python
-# Install: pip install fastvq
-import turboquant
-print(turboquant.__version__)
+from fastvq import TurboQuant, TurboQuantConfig
 ```
 
 ## Quick Start
@@ -81,10 +81,10 @@ print(turboquant.__version__)
 
 ```python
 import numpy as np
-from turboquant import TurboQuant, TurboQuantConfig
+from fastvq import TurboQuant, TurboQuantConfig
 
-# Create sample data
-x = np.random.randn(1, 8, 1024, 128).astype(np.float32)
+# Create sample data. The trailing dimension can be any positive size.
+x = np.random.randn(1, 8, 1024, 192).astype(np.float32)
 
 # Configure TurboQuant
 config = TurboQuantConfig(
@@ -92,6 +92,7 @@ config = TurboQuantConfig(
     block_size=128,        # Block size
     use_qjl=True,          # Enable QJL error correction
     use_polar=True,        # Enable PolarQuant
+    rotation="hadamard",   # Fast deterministic rotation
 )
 
 # Create quantizer
@@ -106,6 +107,7 @@ reconstructed = tq.dequantize(quantized)
 # Check quality
 mse = np.mean((x - reconstructed) ** 2)
 print(f"MSE: {mse:.6f}")
+print(tq.compression_stats(quantized))
 ```
 
 ### KV Cache Compression
@@ -137,18 +139,16 @@ print(f"Compression ratio: {stats['compression_ratio']:.2f}x")
 print(f"Memory saved: {stats['memory_saved_gb']:.2f} GB")
 ```
 
-## Demo
+## Benchmarks And Notebooks
 
-Run the demonstration script:
+Run the synthetic benchmark suite:
 
 ```bash
-python demo.py
+fastvq benchmark-suite --shapes 1024x128,4096x128,1024x192 --bits 2,3,4 --output benchmarks/results.json
+python benchmarks/fastvq_benchmark.py --output benchmarks/results.csv
 ```
 
-This will show:
-1. Basic compression with different bit-widths
-2. KV cache memory analysis
-3. Performance benchmarks
+Open `notebooks/fastvq_quickstart.ipynb` for a notebook walkthrough covering quantization, byte roundtrips, compression stats, and benchmark usage.
 
 ## Algorithm Details
 
@@ -181,7 +181,7 @@ Compressed:          (||x||, q_polar, q_qjl)
 ## Project Structure
 
 ```
-turboquant-clone/
+fastvq/
 ├── turboquant/
 │   ├── __init__.py          # Main exports
 │   ├── turboquant.py        # TurboQuant implementation
@@ -191,6 +191,9 @@ turboquant-clone/
 │   ├── codebooks.py         # Lloyd-Max codebook generation
 │   ├── utils.py             # Bit-packing & utilities
 │   └── kv_cache.py          # KV cache integration
+├── fastvq/                  # Import and CLI aliases for the PyPI package name
+├── benchmarks/              # Benchmark runner scripts
+├── notebooks/               # Notebook examples
 ├── demo.py                  # Demonstration script
 └── README.md               # This file
 ```
@@ -203,13 +206,14 @@ This implementation includes several enhancements:
 
 1. **Simplified Polar Transform**: Uses pairwise transformation instead of full recursive
 2. **Optimized Codebooks**: Pre-computed Lloyd-Max centroids for common dimensions
-3. **Flexible Block Sizes**: Supports 32, 64, and 128-dimensional blocks
-4. **KV Cache Utilities**: Full streaming and batch compression support
+3. **Flexible Block Sizes**: Supports 32, 64, 128, and 256-dimensional blocks
+4. **Arbitrary Input Widths**: Pads/splits trailing dimensions automatically
+5. **Hadamard Rotation Backend**: Avoids dense rotation matrices by default
+6. **KV Cache Utilities**: Full streaming and batch compression support
 
 ### Limitations
 
-- Byte compression (compress/decompress) is not fully implemented - use quantize/dequantize
-- SIMD optimizations (AVX2, AVX-512, NEON) not yet implemented
+- SIMD kernels are NumPy-vectorized fallbacks, not native AVX/NEON extensions
 - CUDA kernels not yet implemented
 - PyTorch integration not yet implemented
 

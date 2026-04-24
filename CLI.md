@@ -1,6 +1,6 @@
-# TurboQuant CLI Documentation
+# FastVQ CLI Documentation
 
-The `turboquant` CLI provides a comprehensive interface for compressing, analyzing, and managing quantized AI models.
+The `fastvq` CLI provides a comprehensive interface for compressing, analyzing, and managing quantized AI models. `turboquant` and `tq` remain available as legacy aliases.
 
 ## Installation
 
@@ -10,11 +10,10 @@ The `turboquant` CLI provides a comprehensive interface for compressing, analyzi
 pip install fastvq
 ```
 
-**Note:** Package name is `fastvq` on PyPI, but imports as `turboquant`:
+The package supports both `fastvq` and legacy `turboquant` imports:
 
 ```python
-# Install: pip install fastvq
-import turboquant
+from fastvq import TurboQuant
 ```
 
 ### From Source
@@ -28,7 +27,8 @@ pip install -e .
 ### Verify Installation
 
 ```bash
-turboquant --help
+fastvq --help
+turboquant --help  # Legacy alias
 tq --help  # Short alias
 ```
 
@@ -45,7 +45,7 @@ All commands support the following:
 Compress numpy arrays using TurboQuant quantization.
 
 ```bash
-turboquant compress input.npy output.tq --bits 3
+fastvq compress input.npy output.tq --bits 3
 ```
 
 **Arguments:**
@@ -54,9 +54,11 @@ turboquant compress input.npy output.tq --bits 3
 
 **Options:**
 - `--bits, -b` - Bit-width: 2, 3 (default), or 4
-- `--block-size` - Block size: 32, 64, or 128 (default)
+- `--block-size` - Block size: 32, 64, 128, or 256 (default: 128)
 - `--no-qjl` - Disable QJL error correction
 - `--seed` - Random seed for reproducibility (default: 42)
+- `--rotation` - Rotation backend: hadamard (default) or random
+- `--radii-dtype` - Radii storage dtype: float16 (default) or float32
 
 **Example:**
 ```bash
@@ -99,7 +101,7 @@ turboquant quick data.npy
 Test different bit-widths and measure performance.
 
 ```bash
-turboquant benchmark input.npy --bits 3,4 --trials 10
+fastvq benchmark input.npy --bits 3,4 --trials 10
 ```
 
 **Arguments:**
@@ -108,7 +110,23 @@ turboquant benchmark input.npy --bits 3,4 --trials 10
 **Options:**
 - `--bits, -b` - Comma-separated bit-widths (default: "3")
 - `--trials` - Number of benchmark trials (default: 10)
+- `--block-size` - Block size: 32, 64, 128, or 256
+- `--rotation` - Rotation backend: hadamard or random
 - `--output, -o` - Save results to JSON file
+
+### `benchmark-suite` - Synthetic Benchmark Grid
+
+Run repeatable synthetic benchmarks across shapes, bit-widths, and block sizes.
+
+```bash
+fastvq benchmark-suite --shapes 1024x128,4096x128,1024x192 --bits 2,3,4 --output benchmarks/results.json
+```
+
+Use semicolons for comma-style multidimensional shapes:
+
+```bash
+fastvq benchmark-suite --shapes "1,8,1024,128;1,8,2048,192"
+```
 
 **Example Output:**
 ```

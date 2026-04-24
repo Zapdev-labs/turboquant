@@ -1,5 +1,6 @@
-import numpy as np
 from typing import Tuple
+
+import numpy as np
 
 
 def walsh_hadamard_transform(x: np.ndarray) -> np.ndarray:
@@ -155,16 +156,14 @@ def random_rotation_matrix(d: int, seed: int = 42) -> np.ndarray:
     Returns:
         Orthogonal matrix of shape (d, d)
     """
-    np.random.seed(seed)
-
-    # Generate random Gaussian matrix
-    A = np.random.randn(d, d)
+    rng = np.random.default_rng(seed)
+    gaussian = rng.standard_normal((d, d))
 
     # QR decomposition
-    Q, R = np.linalg.qr(A)
+    rotation, _upper = np.linalg.qr(gaussian)
 
     # Ensure proper rotation (det = +1, not -1)
-    if np.linalg.det(Q) < 0:
-        Q[:, 0] = -Q[:, 0]
+    if np.linalg.det(rotation) < 0:
+        rotation[:, 0] = -rotation[:, 0]
 
-    return Q.astype(np.float32)
+    return rotation.astype(np.float32)

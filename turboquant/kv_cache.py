@@ -1,5 +1,7 @@
+from typing import Dict, List, Optional, Tuple
+
 import numpy as np
-from typing import Optional, Dict, List, Tuple
+
 from .turboquant import TurboQuant, TurboQuantConfig
 
 
@@ -120,11 +122,14 @@ class KVCacheCompressor:
         fp16_bytes_per_token = head_dim * 2  # 2 bytes per FP16 value
         fp16_total = n_tokens * fp16_bytes_per_token * 2  # K + V
 
-        # TurboQuant compressed
-        bits_per_value = self.config.bit_width
-        tq_bytes_per_token = (head_dim * bits_per_value) / 8
-        tq_metadata_per_token = 4  # 4 bytes for norm
-        tq_total = n_tokens * (tq_bytes_per_token + tq_metadata_per_token) * 2
+        # TurboQuant compressed representation: norm + polar radii + packed indices/signs.
+        polar_bits = self.config.bit_width - 1 if self.config.use_qjl else self.config.bit_width
+        polar_index_bytes = (head_dim // 2 * polar_bits) / 8
+        qjl_bytes = head_dim / 8 if self.config.use_qjl else 0
+        radii_itemsize = np.dtype(self.config.radii_dtype).itemsize
+        radii_bytes = (head_dim // 2) * radii_itemsize
+        tq_bytes_per_token = 4 + radii_bytes + polar_index_bytes + qjl_bytes
+        tq_total = n_tokens * tq_bytes_per_token * 2
 
         compression_ratio = fp16_total / tq_total
         memory_saved_gb = (fp16_total - tq_total) / (1024**3)
@@ -190,7 +195,7 @@ class StreamingKVCache:
 
         # Decompress all blocks
         k_list = [self.compressor.decompress_k(kc) for kc in self.k_cache_compressed]
-        v_list = [self.compressor.decompress_k(vc) for vc in self.v_cache_compressed]
+        v_list = [self.compressor.decompress_v(vc) for vc in self.v_cache_compressed]
 
         # Concatenate
         k_full = np.concatenate(k_list, axis=2)  # Concatenate along seq_len
@@ -210,9 +215,15 @@ class StreamingKVCache:
         for kc in self.k_cache_compressed:
             total += kc["norms"].nbytes
             total += kc["polar_indices"].nbytes
+            total += kc["polar_radii"].nbytes
+            if "qjl_signs" in kc:
+                total += kc["qjl_signs"].nbytes
         for vc in self.v_cache_compressed:
             total += vc["norms"].nbytes
             total += vc["polar_indices"].nbytes
+            total += vc["polar_radii"].nbytes
+            if "qjl_signs" in vc:
+                total += vc["qjl_signs"].nbytes
         return total
 
 
@@ -221,7 +232,7 @@ def benchmark_kv_cache(
     batch_size: int = 1,
     n_heads: int = 32,
     head_dim: int = 128,
-    bit_widths: List[int] = [3, 4, 8],
+    bit_widths: Optional[List[int]] = None,
 ) -> List[Dict]:
     """Benchmark KV cache compression at different bit-widths.
 
@@ -235,18 +246,17 @@ def benchmark_kv_cache(
     Returns:
         List of benchmark results
     """
+    if bit_widths is None:
+        bit_widths = [2, 3, 4]
+
     results = []
 
     for bw in bit_widths:
         compressor = KVCacheCompressor(bit_width=bw, block_size=head_dim)
 
         # Generate synthetic KV cache
-        k_cache = np.random.randn(batch_size, n_heads, seq_len, head_dim).astype(
-            np.float32
-        )
-        v_cache = np.random.randn(batch_size, n_heads, seq_len, head_dim).astype(
-            np.float32
-        )
+        k_cache = np.random.randn(batch_size, n_heads, seq_len, head_dim).astype(np.float32)
+        v_cache = np.random.randn(batch_size, n_heads, seq_len, head_dim).astype(np.float32)
 
         # Benchmark compression
         import time
